@@ -53,6 +53,14 @@ def init_db():
                 summary TEXT,
                 errors_made INTEGER DEFAULT 0
             );
+                           
+            CREATE TABLE IF NOT EXISTS reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                generated_at TEXT NOT NULL,
+                period TEXT,           -- 'weekly', 'session', 'all_time'
+                content TEXT,          -- human-readable markdown report
+                shared INTEGER DEFAULT 0  -- flag for future sharing feature
+            );
         """)
 
 if __name__ == "__main__":
