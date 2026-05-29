@@ -1,0 +1,136 @@
+@import "tailwindcss";
+
+:root {
+  /* Deep night sky / midnight indigo base */
+  --background: #080c18;
+  --foreground: #eef2ff;
+  --sidebar: #050810;
+  --surface: #0f1529;
+  --surface-hover: #161e38;
+  --border: #2a3560;
+  --border-subtle: #141c32;
+  --border-glow: rgba(168, 85, 247, 0.35);
+
+  /* Vibrant accents */
+  --accent: #a855f7;
+  --accent-muted: #9333ea;
+  --accent-teal: #06b6d4;
+  --accent-cyan: #22d3ee;
+  --accent-violet: #c084fc;
+  --muted: #7b8ab8;
+
+  /* Gradients */
+  --gradient-brand: linear-gradient(135deg, #a855f7 0%, #6366f1 45%, #22d3ee 100%);
+  --gradient-accent: linear-gradient(135deg, #9333ea 0%, #06b6d4 100%);
+  --gradient-surface: linear-gradient(
+    160deg,
+    rgba(168, 85, 247, 0.12) 0%,
+    rgba(6, 182, 212, 0.06) 50%,
+    transparent 100%
+  );
+  --gradient-glow: radial-gradient(
+    ellipse at top left,
+    rgba(168, 85, 247, 0.14) 0%,
+    rgba(6, 182, 212, 0.06) 40%,
+    transparent 70%
+  );
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-sidebar: var(--sidebar);
+  --color-surface: var(--surface);
+  --color-surface-hover: var(--surface-hover);
+  --color-border: var(--border);
+  --color-border-subtle: var(--border-subtle);
+  --color-accent: var(--accent);
+  --color-accent-muted: var(--accent-muted);
+  --color-accent-teal: var(--accent-teal);
+  --color-accent-cyan: var(--accent-cyan);
+  --color-accent-violet: var(--accent-violet);
+  --color-muted: var(--muted);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+/* Brand typography utilities */
+.text-gradient-brand {
+  background: var(--gradient-brand);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.bg-gradient-brand {
+  background: var(--gradient-accent);
+}
+
+.bg-gradient-brand-subtle {
+  background: var(--gradient-surface);
+}
+
+.border-gradient-brand {
+  border-image: var(--gradient-accent) 1;
+}
+
+/* Glow ring for active / focus states */
+.glow-accent {
+  box-shadow:
+    0 0 0 1px rgba(168, 85, 247, 0.25),
+    0 0 24px rgba(168, 85, 247, 0.12),
+    0 0 48px rgba(6, 182, 212, 0.06);
+}
+
+/* Flashcard flip animation */
+.flashcard-scene {
+  perspective: 1000px;
+}
+
+.flashcard-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-style: preserve-3d;
+}
+
+.flashcard-scene:hover .flashcard-inner {
+  transform: rotateY(180deg);
+}
+
+.flashcard-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.flashcard-back {
+  transform: rotateY(180deg);
+}
+
+/* Custom scrollbar for chat */
+.chat-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-teal) 100%);
+  border-radius: 3px;
+  opacity: 0.6;
+}
+
+.chat-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-violet);
+}
