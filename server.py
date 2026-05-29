@@ -2,6 +2,10 @@ import json
 from datetime import datetime
 from mcp.server.fastmcp import FastMCP
 from database import init_db, get_connection
+from false_friends import (
+    check_word, get_summary, has_coverage, 
+    add_from_llm, get_for_profile
+)
 
 # Initialize DB and MCP server
 init_db()
@@ -19,8 +23,13 @@ def setup_profile(
     proficiency: str = "beginner"
 ) -> str:
     """
-    Set up the learner's language profile. This should be the first
-    thing called when a new user starts using PolyBridge.
+    Set up the learner's language profile.
+    
+    Call this when the user tells you their native language(s) and 
+    what language they want to learn.
+    
+    After calling this, STOP and wait for the user's next instruction.
+    Do NOT automatically start a session.
 
     Args:
         target_language: language being learned as a language code.
@@ -40,15 +49,24 @@ def setup_profile(
             (target_language, json.dumps(native_languages), proficiency)
         )
     
-    return (
-        f"✓ Profile set up!\n"
-        f"  Learning: {target_language}\n"
-        f"  Native languages: {', '.join(native_languages)}\n"
-        f"  Level: {proficiency}\n\n"
-        f"PolyBridge will now tailor everything to your background. "
-        f"Try starting a conversation or logging an error."
+    has_data = has_coverage(native_languages, target_language)
+    ff_summary = get_summary(native_languages, target_language)
+    total_ff = sum(ff_summary.values())
+
+    coverage_msg = (
+        f"  Known false friend traps loaded: {total_ff}"
+        if has_data else
+        f"  No bundled data for this language pair — "
+        f"call generate_false_friends_for_profile() to generate it"
     )
 
+    return (
+        f"✓ Profile created!\n"
+        f"  Learning: {target_language}\n"
+        f"  Native languages: {', '.join(native_languages)}\n"
+        f"  Level: {proficiency}\n"
+        f"{coverage_msg}"
+    )
 
 @mcp.tool()
 def get_profile() -> str:
@@ -481,6 +499,176 @@ def generate_report(period: str = "all_time") -> str:
     
     return report_content
 
+
+# ============================================================
+# FALSE FRIEND TOOLS
+# ============================================================
+
+@mcp.tool()
+def check_false_friend(word: str) -> str:
+    """
+    Check if a word is a false friend for this learner based on 
+    their native languages and target language.
+
+    Call this proactively when:
+    - A word appears that looks similar to a word in the user's native language
+    - The user uses a word that might have a different meaning than they think
+    - Introducing new vocabulary that has cognates in native languages
+
+    Checks curated dataset first, then falls back to your own linguistic
+    knowledge for pairs not in the dataset.
+
+    Args:
+        word: the word to check — can be in either native or target language
+    """
+    with get_connection() as conn:
+        profile = conn.execute(
+            "SELECT * FROM user_profile LIMIT 1"
+        ).fetchone()
+
+    if not profile:
+        return "No profile found. Call setup_profile() first."
+
+    native_langs = json.loads(profile["native_languages"])
+    target_lang = profile["target_language"]
+
+    result = check_word(word, native_langs, target_lang)
+
+    if result:
+        danger_emoji = {
+            "high": "🚨", 
+            "medium": "⚠️", 
+            "low": "💡"
+        }.get(result["danger"], "⚠️")
+
+        # Log to vocab table so we track exposure
+        with get_connection() as conn:
+            conn.execute("""
+                INSERT OR IGNORE INTO vocab
+                (word, translation, target_language, is_false_friend, priority, first_seen)
+                VALUES (?, ?, ?, 1, 'high', datetime('now'))
+            """, (result["target_word"], result["target_actual_meaning"], target_lang))
+
+        return (
+            f"{danger_emoji} FALSE FRIEND — {result['native_lang']} speaker trap!\n"
+            f"\n"
+            f"  '{result['target_word']}' looks like '{result['native_word']}' in {result['native_lang']}\n"
+            f"  But in {target_lang} it means: {result['target_actual_meaning']}\n"
+            f"  NOT: {result['native_assumed_meaning']}\n"
+            f"  Danger level: {result['danger']}"
+        )
+
+    # Not in dataset — tell Claude to use its own knowledge
+    return (
+        f"'{word}' not found in false friends dataset for "
+        f"{'/'.join(native_langs)} → {target_lang}.\n"
+        f"Use your linguistic knowledge to assess whether this could be "
+        f"a false friend for this learner. If it is, call log_error() "
+        f"with category='false_friend' and log_confirmed_false_friend() "
+        f"to add it to the dataset."
+    )
+
+
+@mcp.tool()
+def log_confirmed_false_friend(
+    native_lang: str,
+    target_lang: str,
+    native_word: str,
+    target_word: str,
+    target_actual_meaning: str,
+    native_assumed_meaning: str,
+    danger: str = "high"
+) -> str:
+    """
+    Permanently add a false friend to the dataset.
+    
+    ONLY call this when ALL of these are true:
+    1. check_false_friend() returned "not found" for this word
+    2. You have verified through linguistic knowledge this IS a false friend
+    3. The words look or sound similar AND mean something different
+    
+    Do NOT call this just because a user made a false friend error —
+    check_false_friend() handles detection. This is only for ADDING
+    NEW entries that are missing from the dataset.
+    
+    Args:
+        native_lang: learner's native language code e.g. 'EN', 'PT'
+        target_lang: language being learned e.g. 'FR', 'DE'
+        native_word: the word in the native language
+        target_word: the similar word in the target language
+        target_actual_meaning: what target_word ACTUALLY means
+        native_assumed_meaning: what the learner INCORRECTLY thinks it means
+        danger: 'high' = completely different meaning, 
+                'medium' = partially overlapping meaning
+    """
+    new_entry = {
+        "native_lang": native_lang,
+        "target_lang": target_lang,
+        "native_word": native_word,
+        "target_word": target_word,
+        "target_actual_meaning": target_actual_meaning,
+        "native_assumed_meaning": native_assumed_meaning,
+        "danger": danger
+    }
+
+    added = add_from_llm([new_entry])
+
+    if added > 0:
+        return (
+            f"✓ Added to dataset: '{native_word}' ({native_lang}) "
+            f"→ '{target_word}' ({target_lang})\n"
+            f"This false friend will now be detected for all "
+            f"{native_lang} speakers learning {target_lang}."
+        )
+    
+    return f"'{native_word}' → '{target_word}' already exists in the dataset."
+
+
+@mcp.tool()
+def generate_false_friends_for_profile() -> str:
+    """
+    Generate false friends data for the current profile's language pair
+    using AI knowledge when bundled data doesn't cover it.
+    
+    Call this automatically after setup_profile() if has_bundled_coverage()
+    returns False. This ensures every learner gets false friend detection
+    regardless of their language combination.
+    
+    Returns instructions for generating and adding the data.
+    """
+    with get_connection() as conn:
+        profile = conn.execute(
+            "SELECT * FROM user_profile LIMIT 1"
+        ).fetchone()
+
+    if not profile:
+        return "No profile found. Call setup_profile() first."
+
+    native_langs = json.loads(profile["native_languages"])
+    target_lang = profile["target_language"]
+
+    # Check if we already have coverage
+    if has_coverage(native_langs, target_lang):
+        summary = get_summary(native_langs, target_lang)
+        total = sum(summary.values())
+        return (
+            f"✓ Bundled data already covers this profile.\n"
+            f"  False friends available: {total}\n"
+            f"  " + "\n  ".join(f"{lang} → {target_lang}: {count}" 
+                                 for lang, count in summary.items())
+        )
+
+    # No coverage — return prompt for LLM to generate and add entries
+    pairs = [f"{lang}->{target_lang}" for lang in native_langs]
+    return (
+        f"No bundled data for {' or '.join(pairs)}.\n\n"
+        f"Please generate 20 false friends for each of these pairs:\n"
+        f"{chr(10).join(pairs)}\n\n"
+        f"For each false friend you identify, call log_confirmed_false_friend() "
+        f"to add it to the dataset permanently. Focus on high and medium danger "
+        f"pairs only — words that look or sound similar but mean something "
+        f"different. This data will be saved and reused for future sessions."
+    )
 
 # ============================================================
 # RUN SERVER
