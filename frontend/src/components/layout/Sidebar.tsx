@@ -16,7 +16,7 @@ const navItems = [
   { href: "/progress", label: "Progress", icon: TrendingUp },
   {
     href: "/false-friends",
-    label: "False Friends (Anki)",
+    label: "Flashcards",
     icon: GitCompareArrows,
   },
 ];

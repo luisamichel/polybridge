@@ -60,6 +60,11 @@ body {
   font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
 
+/* Notebook handwriting style for error journal */
+.font-notebook {
+  font-family: "Segoe Script", "Bradley Hand", "Snell Roundhand", cursive;
+}
+
 /* Brand typography utilities */
 .text-gradient-brand {
   background: var(--gradient-brand);
@@ -102,6 +107,14 @@ body {
 }
 
 .flashcard-scene:hover .flashcard-inner {
+  transform: rotateY(180deg);
+}
+
+.flashcard-scene.flashcard-clickable:hover .flashcard-inner {
+  transform: none;
+}
+
+.flashcard-scene.flashcard-clickable.flashcard-flipped .flashcard-inner {
   transform: rotateY(180deg);
 }
 
