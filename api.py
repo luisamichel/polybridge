@@ -16,6 +16,10 @@ from pydantic import BaseModel
 
 from database import get_connection
 from false_friends import _load as load_false_friends
+from tool_executor import execute_tool
+from tools import TOOLS
+
+MAX_TOOL_ITERATIONS = 5
 
 DARTMOUTH_MODELS_URL = "https://chat.dartmouth.edu/api/models"
 MODEL_ID_KEYWORDS = ("claude", "gemini", "gpt", "llama")
@@ -84,6 +88,73 @@ def _openai_client() -> OpenAI:
     if not base_url or not api_key:
         raise ValueError("DARTMOUTH_BASE_URL and DARTMOUTH_API_KEY must be set")
     return OpenAI(api_key=api_key, base_url=base_url)
+
+
+def _assistant_message_to_dict(message: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "role": "assistant",
+        "content": message.content,
+    }
+    if message.tool_calls:
+        payload["tool_calls"] = [
+            {
+                "id": tool_call.id,
+                "type": tool_call.type,
+                "function": {
+                    "name": tool_call.function.name,
+                    "arguments": tool_call.function.arguments,
+                },
+            }
+            for tool_call in message.tool_calls
+        ]
+    return payload
+
+
+def _run_chat_with_tools(
+    client: OpenAI,
+    model: str,
+    messages: list[dict[str, Any]],
+) -> str:
+    for _ in range(MAX_TOOL_ITERATIONS):
+        completion = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            tools=TOOLS,
+            stream=False,
+        )
+        choice = completion.choices[0]
+        message = choice.message
+
+        if choice.finish_reason != "tool_calls":
+            return message.content or ""
+
+        if not message.tool_calls:
+            return message.content or ""
+
+        messages.append(_assistant_message_to_dict(message))
+
+        for tool_call in message.tool_calls:
+            tool_name = tool_call.function.name
+            try:
+                tool_args = json.loads(tool_call.function.arguments or "{}")
+                if not isinstance(tool_args, dict):
+                    tool_args = {}
+            except json.JSONDecodeError as exc:
+                result = f"Error parsing tool arguments: {exc}"
+            else:
+                result = execute_tool(tool_name, tool_args)
+
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": result,
+                }
+            )
+    else:
+        raise RuntimeError(
+            f"Tool call limit reached after {MAX_TOOL_ITERATIONS} iterations"
+        )
 
 app = FastAPI(title="PolyBridge API")
 
@@ -311,16 +382,11 @@ def list_models() -> list[dict[str, str]]:
 def chat(request: ChatRequest):
     try:
         client = _openai_client()
-        messages: list[dict[str, str]] = [
+        messages: list[dict[str, Any]] = [
             {"role": "system", "content": SYSTEM_PROMPT},
             *[m.model_dump() for m in request.messages],
         ]
-        completion = client.chat.completions.create(
-            model=request.model,
-            messages=messages,
-            stream=False,
-        )
-        content = completion.choices[0].message.content or ""
+        content = _run_chat_with_tools(client, request.model, messages)
         return {"response": content, "model": request.model}
     except Exception as exc:
         return JSONResponse(

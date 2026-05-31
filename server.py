@@ -93,7 +93,7 @@ def get_profile() -> str:
         f"Current profile:\n"
         f"  Learning: {profile['target_language']}\n"
         f"  Native languages: {', '.join(native_langs)}\n"
-        f"  Level: {proficiency}\n"
+        f"  Level: {profile['proficiency']}\n"
     ).replace("proficiency", profile['proficiency'])
 
 
@@ -181,7 +181,10 @@ def get_recent_errors(limit: int = 10) -> str:
 # ============================================================
 
 @mcp.tool()
-def start_session(topic: str = "general conversation") -> str:
+def start_session(
+    topic: str = "general conversation",
+    focus_grammar: str = "",
+) -> str:
     """
     Start a language learning session. Call this at the beginning of 
     any practice conversation or study session.
@@ -189,11 +192,17 @@ def start_session(topic: str = "general conversation") -> str:
     Args:
         topic: what will be practiced — e.g. 'past tense', 
                'food vocabulary', 'general conversation'
+        focus_grammar: optional grammar point to emphasize during the session
+                       (e.g. 'subjunctive', 'preterite vs imperfect')
     """
+    session_topic = topic
+    if focus_grammar.strip():
+        session_topic = f"{topic} — grammar focus: {focus_grammar.strip()}"
+
     with get_connection() as conn:
         conn.execute(
             "INSERT INTO sessions (date, topic) VALUES (?, ?)",
-            (datetime.now().isoformat(), topic)
+            (datetime.now().isoformat(), session_topic)
         )
     
     # Get profile to personalize it
@@ -202,18 +211,27 @@ def start_session(topic: str = "general conversation") -> str:
             "SELECT * FROM user_profile LIMIT 1"
         ).fetchone()
     
+    grammar_line = (
+        f"  Grammar focus: {focus_grammar.strip()}\n" if focus_grammar.strip() else ""
+    )
+
     if profile:
         native_langs = json.loads(profile['native_languages'])
         return (
             f"Session started!\n"
             f"  Topic: {topic}\n"
+            f"{grammar_line}"
             f"  Target language: {profile['target_language']}\n"
             f"  Watching for interference from: {', '.join(native_langs)}\n\n"
             f"I'll track your errors automatically. "
             f"Let's go!"
         )
     
-    return f"Session started! Topic: {topic}. Set up your profile with setup_profile() for personalized tracking."
+    return (
+        f"Session started! Topic: {topic}.\n"
+        f"{grammar_line}"
+        f"Set up your profile with setup_profile() for personalized tracking."
+    )
 
 
 @mcp.tool()
