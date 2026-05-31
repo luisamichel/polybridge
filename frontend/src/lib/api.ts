@@ -145,3 +145,53 @@ export async function getReport(
   const query = period !== undefined ? `?period=${period}` : "";
   return fetchJson<Report>(`/report${query}`);
 }
+
+export type Message = {
+  role: "user" | "assistant" | "system";
+  content: string;
+};
+
+export interface ChatModel {
+  id: string;
+  name: string;
+}
+
+export interface ChatResponse {
+  response: string;
+  model: string;
+}
+
+export async function getModels(): Promise<ChatModel[]> {
+  const response = await fetch(`${API_BASE}/models`);
+  if (!response.ok) {
+    throw new Error("Failed to load models. Check that the API is running.");
+  }
+  const data = (await response.json()) as ChatModel[];
+  return Array.isArray(data) ? data : [];
+}
+
+export async function sendMessage(
+  messages: Message[],
+  model: string,
+): Promise<ChatResponse> {
+  const response = await fetch(`${API_BASE}/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ messages, model }),
+  });
+
+  const data: unknown = await response.json();
+
+  if (!response.ok) {
+    const message =
+      typeof data === "object" &&
+      data !== null &&
+      "error" in data &&
+      typeof (data as { error: unknown }).error === "string"
+        ? (data as { error: string }).error
+        : "Something went wrong. Please try again.";
+    throw new Error(message);
+  }
+
+  return data as ChatResponse;
+}

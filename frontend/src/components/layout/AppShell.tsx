@@ -1,3 +1,4 @@
+import { ChatProvider } from "@/components/chat/ChatProvider";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
 
@@ -12,10 +13,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           style={{ background: "var(--gradient-glow)" }}
           aria-hidden
         />
-        <Header />
-        <main className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-          {children}
-        </main>
+        <ChatProvider>
+          <Header />
+          <main className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+            {children}
+          </main>
+        </ChatProvider>
       </div>
     </div>
   );
