@@ -113,7 +113,7 @@ def log_error(
     """
     Log a language error made during conversation or study.
 
-    Call this immediately whenever the user makes a mistake.
+    Call this immediately whenever the user makes a mistake. Mistakes that are likely typos shouldn't be logged.
     Always check get_profile() first to know which interference languages
     are relevant for this learner.
 
@@ -121,7 +121,7 @@ def log_error(
         mistake: exactly what the user said or wrote incorrectly
         correction: the correct form
         context: the full sentence where the error occurred
-        category: type of error — 'grammar', 'vocab', 'false_friend',
+        category: type of error, one of: 'grammar', 'vocab', 'false_friend',
                   'gender', 'spelling', 'word_order'
         interference_lang: which native language likely caused this error.
                            Use the language code from their profile (e.g. 'EN', 'PT')
