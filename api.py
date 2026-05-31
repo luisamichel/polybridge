@@ -1,12 +1,89 @@
-from typing import Any, Literal
-import json
-from collections import defaultdict
+from dotenv import load_dotenv
 
+load_dotenv()
+
+import json
+import os
+from collections import defaultdict
+from typing import Any, Literal
+
+import httpx
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from openai import OpenAI
+from pydantic import BaseModel
 
 from database import get_connection
 from false_friends import _load as load_false_friends
+
+DARTMOUTH_MODELS_URL = "https://chat.dartmouth.edu/api/models"
+MODEL_ID_KEYWORDS = ("claude", "gemini", "gpt", "llama")
+
+SYSTEM_PROMPT = """You are PolyBridge, a personalized language tutor. You help users \
+learn their target language by having natural conversations, \
+catching errors, and leveraging their existing language knowledge.
+
+You have access to tools for logging errors, detecting false friends,
+and tracking progress. Use them proactively during conversations.
+
+Always be encouraging and specific with corrections. When you catch \
+an error, explain why it's wrong relative to the user's native \
+language background."""
+
+
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant", "system"]
+    content: str
+
+
+class ChatRequest(BaseModel):
+    messages: list[ChatMessage]
+    model: str
+
+
+def _dartmouth_api_key() -> str:
+    return os.environ.get("DARTMOUTH_API_KEY", "")
+
+
+def _dartmouth_auth_headers() -> dict[str, str]:
+    key = _dartmouth_api_key()
+    if not key:
+        return {}
+    return {"Authorization": f"Bearer {key}"}
+
+
+def _model_matches_filter(model_id: str) -> bool:
+    lower_id = model_id.lower()
+    return any(keyword in lower_id for keyword in MODEL_ID_KEYWORDS)
+
+
+def _parse_models_payload(payload: Any) -> list[dict[str, str]]:
+    if isinstance(payload, list):
+        raw_models = payload
+    elif isinstance(payload, dict):
+        raw_models = payload.get("data", [])
+    else:
+        return []
+
+    result: list[dict[str, str]] = []
+    for item in raw_models:
+        if not isinstance(item, dict):
+            continue
+        model_id = item.get("id")
+        if not model_id or not _model_matches_filter(str(model_id)):
+            continue
+        name = item.get("name") or item.get("display_name") or str(model_id)
+        result.append({"id": str(model_id), "name": str(name)})
+    return result
+
+
+def _openai_client() -> OpenAI:
+    base_url = os.environ.get("DARTMOUTH_BASE_URL")
+    api_key = _dartmouth_api_key()
+    if not base_url or not api_key:
+        raise ValueError("DARTMOUTH_BASE_URL and DARTMOUTH_API_KEY must be set")
+    return OpenAI(api_key=api_key, base_url=base_url)
 
 app = FastAPI(title="PolyBridge API")
 
@@ -217,3 +294,36 @@ def get_report(
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/models")
+def list_models() -> list[dict[str, str]]:
+    with httpx.Client(timeout=30.0) as client:
+        response = client.get(
+            DARTMOUTH_MODELS_URL,
+            headers=_dartmouth_auth_headers(),
+        )
+        response.raise_for_status()
+        return _parse_models_payload(response.json())
+
+
+@app.post("/chat")
+def chat(request: ChatRequest):
+    try:
+        client = _openai_client()
+        messages: list[dict[str, str]] = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            *[m.model_dump() for m in request.messages],
+        ]
+        completion = client.chat.completions.create(
+            model=request.model,
+            messages=messages,
+            stream=False,
+        )
+        content = completion.choices[0].message.content or ""
+        return {"response": content, "model": request.model}
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(exc)},
+        )
