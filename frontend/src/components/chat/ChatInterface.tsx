@@ -1,30 +1,28 @@
 "use client";
 
-import { FormEvent, Fragment, useEffect, useRef, useState } from "react";
+import {
+  Dispatch,
+  FormEvent,
+  Fragment,
+  SetStateAction,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { ArrowUp, Loader2, Sparkles } from "lucide-react";
-import { useChatModel } from "@/components/chat/ChatProvider";
+import { useChatModel, type ChatUiMessage } from "@/components/chat/ChatProvider";
 import { sendMessage, type Message as ApiMessage } from "@/lib/api";
-
-type UiMessage = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  isError?: boolean;
-};
-
-const welcomeMessage: UiMessage = {
-  id: "welcome",
-  role: "assistant",
-  content:
-    "Welcome to PolyBridge! I'm here to help you practice languages through conversation. What would you like to work on today?",
-};
 
 /** Keep tool status visible long enough to read (tools finish on the server in ms). */
 const TOOL_INDICATOR_MIN_MS = 1200;
 
-export function ChatInterface() {
+type ChatInterfaceProps = {
+  messages: ChatUiMessage[];
+  setMessages: Dispatch<SetStateAction<ChatUiMessage[]>>;
+};
+
+export function ChatInterface({ messages, setMessages }: ChatInterfaceProps) {
   const { selectedModelId, modelsLoading, modelsError } = useChatModel();
-  const [messages, setMessages] = useState<UiMessage[]>([welcomeMessage]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [toolActivity, setToolActivity] = useState<string | null>(null);
@@ -66,14 +64,14 @@ export function ChatInterface() {
     const trimmed = input.trim();
     if (!trimmed || isStreaming || modelsLoading || !selectedModelId) return;
 
-    const userMessage: UiMessage = {
+    const userMessage: ChatUiMessage = {
       id: crypto.randomUUID(),
       role: "user",
       content: trimmed,
     };
 
     const assistantId = crypto.randomUUID();
-    const assistantPlaceholder: UiMessage = {
+    const assistantPlaceholder: ChatUiMessage = {
       id: assistantId,
       role: "assistant",
       content: "",

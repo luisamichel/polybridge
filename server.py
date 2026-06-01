@@ -6,7 +6,6 @@ from false_friends import (
     check_word, get_summary, has_coverage, 
     add_from_llm, get_for_profile
 )
-from tools import LOG_ERROR_CATEGORY_DESCRIPTION
 
 # Initialize DB and MCP server
 init_db()
@@ -111,30 +110,40 @@ def log_error(
     interference_lang: str = "unknown",
     notes: str = ""
 ) -> str:
-    f"""
+    """
     Log a language error made during conversation or study.
 
     Call this immediately whenever the user makes a mistake. Mistakes that are likely typos shouldn't be logged.
-    Always check get_profile() first to know which interference languages
-    are relevant for this learner.
+    Always check get_profile() first to remind yourself of the interference languages
+    that are relevant for this learner.
 
     Args:
         mistake: exactly what the user said or wrote incorrectly
         correction: the correct form
         context: the full sentence where the error occurred
-        category: {LOG_ERROR_CATEGORY_DESCRIPTION}
+        category: type of error, one of: 'grammar', 'vocab', 'false_friend',
+                  'gender', 'spelling', 'word_order'
         interference_lang: which native language likely caused this error.
                            Use the language code from their profile (e.g. 'EN', 'PT')
                            or 'none' if unrelated to native language interference
         notes: brief explanation of why this is wrong and how to remember the fix
     """
+    VALID_CATEGORIES = {
+        'grammar', 'vocab', 'false_friend', 
+        'gender', 'spelling', 'word_order', 'unknown'
+    }
+
+
+    if category not in VALID_CATEGORIES:
+        category = 'unknown'
+
     with get_connection() as conn:
         cursor = conn.execute(
             """INSERT INTO errors
                (timestamp, mistake, correction, category, interference_lang, context, notes)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (datetime.now().isoformat(), mistake, correction,
-             context, category, interference_lang, notes)
+             category, interference_lang, context, notes)
         )
         error_id = cursor.lastrowid
 
@@ -145,7 +154,6 @@ def log_error(
         f"  Category: {category} | Interference: {interference_lang}\n"
         f"  Note: {notes}"
     )
-
 
 @mcp.tool()
 def get_recent_errors(limit: int = 10) -> str:
@@ -175,6 +183,7 @@ def get_recent_errors(limit: int = 10) -> str:
         )
 
     return "\n".join(lines)
+
 
 # ============================================================
 # SESSION TOOLS
@@ -232,7 +241,6 @@ def start_session(
         f"{grammar_line}"
         f"Set up your profile with setup_profile() for personalized tracking."
     )
-
 
 @mcp.tool()
 def end_session(summary: str = "") -> str:
@@ -351,7 +359,6 @@ def get_error_patterns() -> str:
     
     return "\n".join(lines)
 
-
 @mcp.tool()
 def get_multilingual_profile() -> str:
     """
@@ -418,7 +425,6 @@ def get_multilingual_profile() -> str:
             )
     
     return "\n".join(lines)
-
 
 @mcp.tool()
 def generate_report(period: str = "all_time") -> str:
@@ -586,7 +592,6 @@ def check_false_friend(word: str) -> str:
         f"to add it to the dataset."
     )
 
-
 @mcp.tool()
 def log_confirmed_false_friend(
     native_lang: str,
@@ -640,7 +645,6 @@ def log_confirmed_false_friend(
         )
     
     return f"'{native_word}' → '{target_word}' already exists in the dataset."
-
 
 @mcp.tool()
 def generate_false_friends_for_profile() -> str:

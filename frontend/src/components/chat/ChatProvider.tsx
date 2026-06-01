@@ -7,9 +7,27 @@ import {
   useEffect,
   useMemo,
   useState,
+  type Dispatch,
   type ReactNode,
+  type SetStateAction,
 } from "react";
 import { getModels, type ChatModel } from "@/lib/api";
+
+export type ChatUiMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  isError?: boolean;
+};
+
+const welcomeMessage: ChatUiMessage = {
+  id: "welcome",
+  role: "assistant",
+  content:
+    "Welcome to PolyBridge! I'm here to help you practice languages through conversation. What would you like to work on today?",
+};
+
+const initialMessages: ChatUiMessage[] = [welcomeMessage];
 
 type ChatContextValue = {
   models: ChatModel[];
@@ -17,6 +35,8 @@ type ChatContextValue = {
   setSelectedModelId: (id: string) => void;
   modelsLoading: boolean;
   modelsError: string | null;
+  messages: ChatUiMessage[];
+  setMessages: Dispatch<SetStateAction<ChatUiMessage[]>>;
 };
 
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -26,6 +46,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [selectedModelId, setSelectedModelId] = useState("");
   const [modelsLoading, setModelsLoading] = useState(true);
   const [modelsError, setModelsError] = useState<string | null>(null);
+  const [messages, setMessages] = useState<ChatUiMessage[]>(initialMessages);
 
   const loadModels = useCallback(async () => {
     setModelsLoading(true);
@@ -60,8 +81,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       setSelectedModelId,
       modelsLoading,
       modelsError,
+      messages,
+      setMessages,
     }),
-    [models, selectedModelId, modelsLoading, modelsError],
+    [models, selectedModelId, modelsLoading, modelsError, messages],
   );
 
   return (
@@ -75,4 +98,9 @@ export function useChatModel() {
     throw new Error("useChatModel must be used within ChatProvider");
   }
   return context;
+}
+
+export function useChatMessages() {
+  const { messages, setMessages } = useChatModel();
+  return { messages, setMessages };
 }
