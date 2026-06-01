@@ -93,7 +93,7 @@ def get_profile() -> str:
         f"Current profile:\n"
         f"  Learning: {profile['target_language']}\n"
         f"  Native languages: {', '.join(native_langs)}\n"
-        f"  Level: {proficiency}\n"
+        f"  Level: {profile['proficiency']}\n"
     ).replace("proficiency", profile['proficiency'])
 
 
@@ -113,28 +113,37 @@ def log_error(
     """
     Log a language error made during conversation or study.
 
-    Call this immediately whenever the user makes a mistake.
-    Always check get_profile() first to know which interference languages
-    are relevant for this learner.
+    Call this immediately whenever the user makes a mistake. Mistakes that are likely typos shouldn't be logged.
+    Always check get_profile() first to remind yourself of the interference languages
+    that are relevant for this learner.
 
     Args:
         mistake: exactly what the user said or wrote incorrectly
         correction: the correct form
         context: the full sentence where the error occurred
-        category: type of error — 'grammar', 'vocab', 'false_friend',
+        category: type of error, one of: 'grammar', 'vocab', 'false_friend',
                   'gender', 'spelling', 'word_order'
         interference_lang: which native language likely caused this error.
                            Use the language code from their profile (e.g. 'EN', 'PT')
                            or 'none' if unrelated to native language interference
         notes: brief explanation of why this is wrong and how to remember the fix
     """
+    VALID_CATEGORIES = {
+        'grammar', 'vocab', 'false_friend', 
+        'gender', 'spelling', 'word_order', 'unknown'
+    }
+
+
+    if category not in VALID_CATEGORIES:
+        category = 'unknown'
+
     with get_connection() as conn:
         cursor = conn.execute(
             """INSERT INTO errors
                (timestamp, mistake, correction, category, interference_lang, context, notes)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (datetime.now().isoformat(), mistake, correction,
-             context, category, interference_lang, notes)
+             category, interference_lang, context, notes)
         )
         error_id = cursor.lastrowid
 
@@ -145,7 +154,6 @@ def log_error(
         f"  Category: {category} | Interference: {interference_lang}\n"
         f"  Note: {notes}"
     )
-
 
 @mcp.tool()
 def get_recent_errors(limit: int = 10) -> str:
@@ -176,12 +184,16 @@ def get_recent_errors(limit: int = 10) -> str:
 
     return "\n".join(lines)
 
+
 # ============================================================
 # SESSION TOOLS
 # ============================================================
 
 @mcp.tool()
-def start_session(topic: str = "general conversation") -> str:
+def start_session(
+    topic: str = "general conversation",
+    focus_grammar: str = "",
+) -> str:
     """
     Start a language learning session. Call this at the beginning of 
     any practice conversation or study session.
@@ -189,11 +201,17 @@ def start_session(topic: str = "general conversation") -> str:
     Args:
         topic: what will be practiced — e.g. 'past tense', 
                'food vocabulary', 'general conversation'
+        focus_grammar: optional grammar point to emphasize during the session
+                       (e.g. 'subjunctive', 'preterite vs imperfect')
     """
+    session_topic = topic
+    if focus_grammar.strip():
+        session_topic = f"{topic} — grammar focus: {focus_grammar.strip()}"
+
     with get_connection() as conn:
         conn.execute(
             "INSERT INTO sessions (date, topic) VALUES (?, ?)",
-            (datetime.now().isoformat(), topic)
+            (datetime.now().isoformat(), session_topic)
         )
     
     # Get profile to personalize it
@@ -202,19 +220,27 @@ def start_session(topic: str = "general conversation") -> str:
             "SELECT * FROM user_profile LIMIT 1"
         ).fetchone()
     
+    grammar_line = (
+        f"  Grammar focus: {focus_grammar.strip()}\n" if focus_grammar.strip() else ""
+    )
+
     if profile:
         native_langs = json.loads(profile['native_languages'])
         return (
             f"Session started!\n"
             f"  Topic: {topic}\n"
+            f"{grammar_line}"
             f"  Target language: {profile['target_language']}\n"
             f"  Watching for interference from: {', '.join(native_langs)}\n\n"
             f"I'll track your errors automatically. "
             f"Let's go!"
         )
     
-    return f"Session started! Topic: {topic}. Set up your profile with setup_profile() for personalized tracking."
-
+    return (
+        f"Session started! Topic: {topic}.\n"
+        f"{grammar_line}"
+        f"Set up your profile with setup_profile() for personalized tracking."
+    )
 
 @mcp.tool()
 def end_session(summary: str = "") -> str:
@@ -333,7 +359,6 @@ def get_error_patterns() -> str:
     
     return "\n".join(lines)
 
-
 @mcp.tool()
 def get_multilingual_profile() -> str:
     """
@@ -400,7 +425,6 @@ def get_multilingual_profile() -> str:
             )
     
     return "\n".join(lines)
-
 
 @mcp.tool()
 def generate_report(period: str = "all_time") -> str:
@@ -568,7 +592,6 @@ def check_false_friend(word: str) -> str:
         f"to add it to the dataset."
     )
 
-
 @mcp.tool()
 def log_confirmed_false_friend(
     native_lang: str,
@@ -622,7 +645,6 @@ def log_confirmed_false_friend(
         )
     
     return f"'{native_word}' → '{target_word}' already exists in the dataset."
-
 
 @mcp.tool()
 def generate_false_friends_for_profile() -> str:

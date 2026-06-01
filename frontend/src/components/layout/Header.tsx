@@ -1,23 +1,26 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Bot, Check, ChevronDown, Sparkles } from "lucide-react";
-
-const llmOptions = [
-  { id: "gemini", label: "Gemini 1.5 Pro", color: "text-blue-400" },
-  { id: "claude", label: "Claude 3.5 Sonnet", color: "text-orange-400" },
-  { id: "gpt4o", label: "GPT-4o", color: "text-emerald-400" },
-] as const;
-
-type LlmId = (typeof llmOptions)[number]["id"];
+import { usePathname } from "next/navigation";
+import { Bot, Check, ChevronDown, Loader2, Sparkles } from "lucide-react";
+import { useChatModel } from "@/components/chat/ChatProvider";
 
 export function Header() {
-  const [selected, setSelected] = useState<LlmId>("claude");
+  const pathname = usePathname();
+  const isChatPage = pathname === "/";
+
+  const {
+    models,
+    selectedModelId,
+    setSelectedModelId,
+    modelsLoading,
+    modelsError,
+  } = useChatModel();
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const activeOption =
-    llmOptions.find((opt) => opt.id === selected) ?? llmOptions[1];
+    models.find((model) => model.id === selectedModelId) ?? models[0];
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -33,13 +36,18 @@ export function Header() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  if (!isChatPage) {
+    return null;
+  }
+
   return (
     <header className="relative z-10 flex h-14 shrink-0 items-center border-b border-border-subtle/80 bg-background/50 px-5 backdrop-blur-md">
       <div ref={dropdownRef} className="relative">
         <button
           type="button"
           onClick={() => setOpen((prev) => !prev)}
-          className={`flex items-center gap-2.5 rounded-xl border bg-surface/80 px-3.5 py-2 text-sm transition-all duration-200 hover:bg-surface-hover ${
+          disabled={modelsLoading || models.length === 0}
+          className={`flex items-center gap-2.5 rounded-xl border bg-surface/80 px-3.5 py-2 text-sm transition-all duration-200 hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-60 ${
             open
               ? "border-accent/50 glow-accent"
               : "border-border hover:border-accent/30"
@@ -52,7 +60,16 @@ export function Header() {
           </div>
           <span className="text-muted">Active LLM</span>
           <span className="font-medium text-foreground">
-            {activeOption.label}
+            {modelsLoading ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Loading…
+              </span>
+            ) : modelsError ? (
+              "Unavailable"
+            ) : (
+              (activeOption?.name ?? "Select model")
+            )}
           </span>
           <ChevronDown
             className={`h-4 w-4 text-accent-violet transition-transform duration-200 ${
@@ -64,7 +81,7 @@ export function Header() {
         {open && (
           <ul
             role="listbox"
-            className="absolute left-0 z-50 mt-2 w-60 overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-2xl shadow-black/50 glow-accent"
+            className="absolute left-0 z-50 mt-2 max-h-72 w-72 overflow-y-auto rounded-xl border border-border bg-surface py-1 shadow-2xl shadow-black/50 glow-accent"
           >
             <li className="border-b border-border-subtle px-3.5 py-2">
               <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
@@ -72,38 +89,42 @@ export function Header() {
                 Select model
               </div>
             </li>
-            {llmOptions.map((option) => (
+            {modelsError && (
+              <li className="px-3.5 py-2 text-xs text-red-400">{modelsError}</li>
+            )}
+            {!modelsError && models.length === 0 && !modelsLoading && (
+              <li className="px-3.5 py-2 text-xs text-muted">
+                No models available.
+              </li>
+            )}
+            {models.map((option) => (
               <li key={option.id}>
                 <button
                   type="button"
                   role="option"
-                  aria-selected={selected === option.id}
+                  aria-selected={selectedModelId === option.id}
                   onClick={() => {
-                    setSelected(option.id);
+                    setSelectedModelId(option.id);
                     setOpen(false);
                   }}
                   className={`flex w-full items-center justify-between px-3.5 py-2.5 text-left text-sm transition-colors ${
-                    selected === option.id
+                    selectedModelId === option.id
                       ? "bg-gradient-to-r from-accent/15 to-accent-teal/10"
                       : "hover:bg-surface-hover"
                   }`}
                 >
                   <span
                     className={
-                      selected === option.id
+                      selectedModelId === option.id
                         ? "font-medium text-foreground"
                         : "text-muted"
                     }
                   >
-                    {option.label}
+                    {option.name}
                   </span>
-                  {selected === option.id ? (
-                    <Check className="h-4 w-4 text-accent-cyan" />
-                  ) : (
-                    <span
-                      className={`h-2 w-2 rounded-full bg-current opacity-40 ${option.color}`}
-                    />
-                  )}
+                  {selectedModelId === option.id ? (
+                    <Check className="h-4 w-4 shrink-0 text-accent-cyan" />
+                  ) : null}
                 </button>
               </li>
             ))}

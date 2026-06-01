@@ -60,9 +60,10 @@ body {
   font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
 
-/* Notebook handwriting style for error journal */
-.font-notebook {
-  font-family: "Segoe Script", "Bradley Hand", "Snell Roundhand", cursive;
+/* Notebook handwriting — scoped to the errors notebook card only */
+.notebook-paper,
+.notebook-paper .font-notebook {
+  font-family: var(--font-notebook-hand), "Segoe Script", "Bradley Hand", cursive;
 }
 
 /* Brand typography utilities */

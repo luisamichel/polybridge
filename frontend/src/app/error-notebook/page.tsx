@@ -29,6 +29,14 @@ const CATEGORY_FILTERS = [
 
 type CategoryFilter = (typeof CATEGORY_FILTERS)[number]["id"];
 
+function dateGroupKey(timestamp: string): string {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return timestamp;
+  }
+  return date.toISOString().slice(0, 10);
+}
+
 function formatDate(timestamp: string): string {
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) {
@@ -59,21 +67,55 @@ function categoryLabel(category: string | null): string {
   return category.replace(/_/g, " ");
 }
 
+function shouldShowCategoryBadge(category: string | null): boolean {
+  if (!category) return false;
+  const normalized = category.trim().toLowerCase();
+  return normalized !== "unknown" && normalized !== "none";
+}
+
 function categoryBadgeClass(category: string | null): string {
   switch (category) {
     case "grammar":
-      return "bg-accent-cyan/15 text-accent-cyan ring-accent-cyan/25";
+      return "bg-cyan-200/90 text-cyan-950 ring-cyan-800/45";
     case "spelling":
-      return "bg-red-400/15 text-red-300 ring-red-400/25";
+      return "bg-red-200/90 text-red-950 ring-red-900/45";
     case "vocab":
-      return "bg-accent/15 text-accent-violet ring-accent/25";
+      return "bg-violet-200/90 text-violet-950 ring-violet-900/45";
     case "false_friend":
-      return "bg-accent-violet/15 text-accent-violet ring-accent-violet/25";
+      return "bg-purple-200/90 text-purple-950 ring-purple-900/45";
     case "gender":
-      return "bg-accent-teal/15 text-accent-teal ring-accent-teal/25";
+      return "bg-teal-200/90 text-teal-950 ring-teal-900/45";
     default:
-      return "bg-zinc-500/15 text-zinc-400 ring-zinc-500/25";
+      return "bg-[#d9d0bc] text-[#2a2218] ring-[#8b7355]/50";
   }
+}
+
+function interferenceLangCode(lang: string): string {
+  const normalized = lang.trim().toUpperCase();
+  const codes: Record<string, string> = {
+    ENGLISH: "EN",
+    FRENCH: "FR",
+    SPANISH: "ES",
+    PORTUGUESE: "PT",
+    GERMAN: "DE",
+    ITALIAN: "IT",
+  };
+  return codes[normalized] ?? normalized;
+}
+
+function isKnownInterferenceLang(lang: string | null): boolean {
+  return Boolean(
+    lang && !["none", "unknown", ""].includes(lang.toLowerCase()),
+  );
+}
+
+function normalizeArchivedId(id: unknown): number | null {
+  if (typeof id === "number" && Number.isInteger(id)) return id;
+  if (typeof id === "string" && id.trim() !== "") {
+    const parsed = Number(id);
+    if (Number.isInteger(parsed)) return parsed;
+  }
+  return null;
 }
 
 function loadArchivedIds(): Set<number> {
@@ -81,8 +123,14 @@ function loadArchivedIds(): Set<number> {
   try {
     const raw = localStorage.getItem(ARCHIVE_STORAGE_KEY);
     if (!raw) return new Set();
-    const parsed = JSON.parse(raw) as number[];
-    return new Set(parsed);
+    const parsed = JSON.parse(raw) as unknown[];
+    if (!Array.isArray(parsed)) return new Set();
+
+    const ids = parsed
+      .map(normalizeArchivedId)
+      .filter((id): id is number => id !== null);
+
+    return new Set(ids);
   } catch {
     return new Set();
   }
@@ -132,23 +180,55 @@ function NotebookSkeleton() {
 
 function ErrorRow({
   entry,
+  showDate,
   archived,
   onToggleArchive,
 }: {
   entry: ErrorEntry;
+  showDate: boolean;
   archived: boolean;
   onToggleArchive: (id: number) => void;
 }) {
+  const showCategoryBadge = shouldShowCategoryBadge(entry.category);
+
   return (
-    <article className="group relative border-b border-[#d4cbb8]/80 pb-6 last:border-b-0 last:pb-0">
-      <div className="flex items-start justify-between gap-4">
-        <time
-          className={`shrink-0 text-sm font-medium text-red-400/90 font-notebook`}
-        >
+    <article
+      className={`group relative border-b border-[#d4cbb8]/80 pb-6 last:border-b-0 last:pb-0 ${
+        showDate ? "pt-5" : ""
+      }`}
+    >
+      {showDate ? (
+        <time className="absolute -left-6 top-0 text-sm font-medium text-red-400/90 sm:-left-10">
           {formatDate(entry.timestamp)}
         </time>
+      ) : null}
 
-        <div className="flex shrink-0 items-center gap-2">
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="text-xl leading-snug text-[#3d3428]">
+            <span className="text-red-500/80 line-through">{entry.mistake}</span>
+            <span className="mx-2 text-[#8b7355]">→</span>
+            <span className="font-semibold text-[#2a2218]">
+              {entry.correction}
+            </span>
+          </p>
+
+          {entry.notes ? (
+            <p className="mt-1.5 text-base leading-relaxed text-[#5c5346]">
+              {entry.notes}
+            </p>
+          ) : null}
+        </div>
+
+        <div className="flex shrink-0 items-start gap-2">
+          {showCategoryBadge ? (
+            <span
+              className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ring-1 ${categoryBadgeClass(entry.category)}`}
+            >
+              {categoryLabel(entry.category)}
+            </span>
+          ) : null}
+
           <button
             type="button"
             onClick={() => onToggleArchive(entry.id)}
@@ -167,54 +247,8 @@ function ErrorRow({
               </>
             )}
           </button>
-
-          {entry.category ? (
-            <span
-              className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ring-1 ${categoryBadgeClass(entry.category)}`}
-            >
-              {categoryLabel(entry.category)}
-            </span>
-          ) : null}
         </div>
       </div>
-
-      <p
-        className={`mt-2 text-xl leading-snug text-[#3d3428] font-notebook`}
-      >
-        <span className="text-red-500/80 line-through">{entry.mistake}</span>
-        <span className="mx-2 text-[#8b7355]">→</span>
-        <span className="font-semibold text-[#2a2218]">{entry.correction}</span>
-      </p>
-
-      {entry.notes ? (
-        <p
-          className={`mt-1.5 text-base leading-relaxed text-[#5c5346] font-notebook`}
-        >
-          {entry.notes}
-        </p>
-      ) : null}
-
-      {(entry.context || entry.interference_lang) && (
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#7a6f5e]">
-          {entry.context ? (
-            <p>
-              context:{" "}
-              <span className="rounded bg-accent/20 px-1.5 py-0.5 font-medium text-accent-violet">
-                {entry.context}
-              </span>
-            </p>
-          ) : null}
-          {entry.interference_lang &&
-          !["none", "unknown", ""].includes(entry.interference_lang) ? (
-            <p>
-              from:{" "}
-              <span className="font-medium text-[#4a4035]">
-                {entry.interference_lang}
-              </span>
-            </p>
-          ) : null}
-        </div>
-      )}
     </article>
   );
 }
@@ -230,8 +264,18 @@ export default function ErrorNotebookPage() {
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
 
   useEffect(() => {
-    setArchivedIds(loadArchivedIds());
-  }, []);
+    if (errors === null) return;
+
+    const stored = loadArchivedIds();
+    const errorIds = new Set(errors.map((entry) => entry.id));
+    const synced = new Set([...stored].filter((id) => errorIds.has(id)));
+
+    if (synced.size !== stored.size) {
+      saveArchivedIds(synced);
+    }
+
+    setArchivedIds(synced);
+  }, [errors]);
 
   useEffect(() => {
     let cancelled = false;
@@ -314,13 +358,35 @@ export default function ErrorNotebookPage() {
     });
   }, [visibleErrors, search, categoryFilter]);
 
-  const lastUpdated = errors?.[0]?.timestamp;
+  const sortedFilteredErrors = useMemo(() => {
+    return [...filteredErrors].sort((a, b) => {
+      const aTime = new Date(a.timestamp).getTime();
+      const bTime = new Date(b.timestamp).getTime();
+      const aValid = !Number.isNaN(aTime);
+      const bValid = !Number.isNaN(bTime);
+
+      if (aValid && bValid) {
+        return bTime - aTime;
+      }
+      if (aValid) return -1;
+      if (bValid) return 1;
+      return b.id - a.id;
+    });
+  }, [filteredErrors]);
+
+  const lastUpdated = sortedFilteredErrors[0]?.timestamp;
+
+  const topInterferenceFromPatterns = useMemo(() => {
+    const valid = (patterns?.by_interference_lang ?? []).filter((row) =>
+      isKnownInterferenceLang(row.interference_lang),
+    );
+    return valid[0] ?? null;
+  }, [patterns]);
 
   const patternStats = useMemo(() => {
     const total = errors?.length ?? 0;
     const topCategory = patterns?.by_category[0];
     const repeated = patterns?.repeated_mistakes.length ?? 0;
-    const topInterference = patterns?.by_interference_lang[0];
 
     return {
       total: String(total),
@@ -328,11 +394,14 @@ export default function ErrorNotebookPage() {
         ? `${categoryLabel(topCategory.category)} (${topCategory.count})`
         : "—",
       repeated: String(repeated),
-      interference: topInterference
-        ? `${topInterference.interference_lang} (${topInterference.count})`
-        : "None yet",
+      topInterferenceCode: topInterferenceFromPatterns
+        ? interferenceLangCode(topInterferenceFromPatterns.interference_lang)
+        : null,
+      topInterferenceHint: topInterferenceFromPatterns
+        ? `${interferenceLangCode(topInterferenceFromPatterns.interference_lang)} (${topInterferenceFromPatterns.count})`
+        : "No interference tracked yet",
     };
-  }, [errors, patterns]);
+  }, [errors, patterns, topInterferenceFromPatterns]);
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
@@ -343,35 +412,19 @@ export default function ErrorNotebookPage() {
             <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-accent-teal/70">
               Your learning journal
             </p>
-            <h1
-              className={`mt-1 text-4xl font-semibold tracking-tight text-foreground sm:text-5xl font-notebook`}
-            >
+            <h1 className="mt-1 text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">
               Errors Notebook
             </h1>
             <p className="mt-2 max-w-lg text-sm leading-relaxed text-muted">
-              Every slip is a stepping stone. Browse, revisit, and learn from
-              your past mistakes.
+              Browse, revisit, and learn from your past mistakes.
             </p>
           </div>
 
-          {!loading && errors !== null ? (
+          {!loading && errors !== null && lastUpdated ? (
             <div className="shrink-0 text-right text-sm">
-              <p>
-                <span className="font-semibold text-accent-cyan">
-                  {activeErrors.length} active
-                </span>
-                {archivedErrors.length > 0 ? (
-                  <span className="text-muted">
-                    {" "}
-                    · {archivedErrors.length} archived
-                  </span>
-                ) : null}
+              <p className="text-xs text-muted">
+                last updated {formatRelativeDate(lastUpdated)}
               </p>
-              {lastUpdated ? (
-                <p className="mt-0.5 text-xs text-muted">
-                  last updated {formatRelativeDate(lastUpdated)}
-                </p>
-              ) : null}
             </div>
           ) : null}
         </div>
@@ -399,13 +452,9 @@ export default function ErrorNotebookPage() {
                 hint="Mistakes made more than once"
               />
               <PatternStatCard
-                label="Interference"
-                value={
-                  patternStats.interference === "None yet"
-                    ? "—"
-                    : patternStats.interference.split(" ")[0]
-                }
-                hint={patternStats.interference}
+                label="Top interference"
+                value={patternStats.topInterferenceCode ?? "—"}
+                hint={patternStats.topInterferenceHint}
               />
             </>
           )}
@@ -494,15 +543,13 @@ export default function ErrorNotebookPage() {
               ))}
             </div>
 
-            <div className="min-h-[320px] bg-[#ebe5d4] pl-10 sm:pl-12">
+            <div className="notebook-paper min-h-[320px] bg-[#ebe5d4] pl-10 sm:pl-12">
               {loading ? (
                 <NotebookSkeleton />
               ) : fetchFailed ? (
                 <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
                   <BookOpen className="mb-4 h-10 w-10 text-[#8b7355]" />
-                  <p
-                    className={`text-2xl font-medium text-[#3d3428] font-notebook`}
-                  >
+                  <p className="text-2xl font-medium text-[#3d3428]">
                     Couldn&apos;t reach the server
                   </p>
                   <p className="mt-2 max-w-sm text-sm text-[#7a6f5e]">
@@ -513,10 +560,8 @@ export default function ErrorNotebookPage() {
               ) : filteredErrors.length === 0 ? (
                 <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
                   <BookOpen className="mb-4 h-10 w-10 text-[#8b7355]" />
-                  <p
-                    className={`text-2xl font-medium text-[#3d3428] font-notebook`}
-                  >
-                    {tab === "archived"
+                  <p className="text-2xl font-medium text-[#3d3428]">
+                    {tab === "archived" && archivedErrors.length === 0
                       ? "No archived errors yet"
                       : errors?.length === 0
                         ? "No errors recorded yet"
@@ -532,14 +577,23 @@ export default function ErrorNotebookPage() {
                 </div>
               ) : (
                 <div className="space-y-6 px-6 py-8 sm:px-10">
-                  {filteredErrors.map((entry) => (
-                    <ErrorRow
-                      key={entry.id}
-                      entry={entry}
-                      archived={archivedIds.has(entry.id)}
-                      onToggleArchive={toggleArchive}
-                    />
-                  ))}
+                  {sortedFilteredErrors.map((entry, index) => {
+                    const previous = sortedFilteredErrors[index - 1];
+                    const showDate =
+                      index === 0 ||
+                      dateGroupKey(previous.timestamp) !==
+                        dateGroupKey(entry.timestamp);
+
+                    return (
+                      <ErrorRow
+                        key={entry.id}
+                        entry={entry}
+                        showDate={showDate}
+                        archived={archivedIds.has(entry.id)}
+                        onToggleArchive={toggleArchive}
+                      />
+                    );
+                  })}
                 </div>
               )}
             </div>
