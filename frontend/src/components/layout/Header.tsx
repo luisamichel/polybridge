@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Bot, Check, ChevronDown, Loader2, Sparkles } from "lucide-react";
 import { useChatModel } from "@/components/chat/ChatProvider";
 import NewLearnerButton from "./NewLearnerButton";
+import ProfileBadge from "./ProfileBadge";
 
 export function Header() {
   const pathname = usePathname();
@@ -134,8 +135,10 @@ return (
         )}
       </div>
 
-      {/* RIGHT SIDE: New Learner Button */}
+      {/* RIGHT SIDE: Profile and New Learner Button */}
       <div className="flex items-center gap-4">
+        <ProfileBadge />
+        <div className="h-4 w-px bg-border-subtle/80"></div> {/* Optional divider line */}
         <NewLearnerButton />
       </div>
     </header>

@@ -125,6 +125,8 @@ export function ChatInterface({ messages, setMessages }: ChatInterfaceProps) {
         }
         setToolActivity(null);
         setIsStreaming(false);
+
+        window.dispatchEvent(new Event("profileUpdated"));
       },
       onError: (message) => {
         if (toolHideTimeoutRef.current) {

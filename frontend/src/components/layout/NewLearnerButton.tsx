@@ -20,6 +20,7 @@ export default function NewLearnerButton() {
     setIsDeleting(true);
     try {
       await deleteReset();
+      window.dispatchEvent(new Event("profileUpdated"));
       setIsOpen(false);
       
       router.push("/");
