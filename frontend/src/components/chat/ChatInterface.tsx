@@ -12,7 +12,7 @@ import {
 import { ArrowUp, Loader2, Sparkles } from "lucide-react";
 import { useChatModel, type ChatUiMessage } from "@/components/chat/ChatProvider";
 import { sendMessage, type Message as ApiMessage } from "@/lib/api";
-
+import ReactMarkdown from "react-markdown";
 /** Keep tool status visible long enough to read (tools finish on the server in ms). */
 const TOOL_INDICATOR_MIN_MS = 1200;
 
@@ -236,7 +236,24 @@ export function ChatInterface({ messages, setMessages }: ChatInterfaceProps) {
                             : "bg-surface text-zinc-300 ring-1 ring-border-subtle"
                       }`}
                     >
-                      <p className="whitespace-pre-wrap">{message.content}</p>
+                      {/* Wrap the markdown component in a div to apply the flex layout */}
+                      <div className="flex flex-col gap-2">
+                        <ReactMarkdown
+                          components={{
+                            p: ({ node, ...props }) => <p className="whitespace-pre-wrap" {...props} />,
+                            ul: ({ node, ...props }) => <ul className="list-disc pl-5 space-y-1" {...props} />,
+                            ol: ({ node, ...props }) => <ol className="list-decimal pl-5 space-y-1" {...props} />,
+                            li: ({ node, ...props }) => <li className="pl-1" {...props} />,
+                            strong: ({ node, ...props }) => <strong className="font-semibold text-white" {...props} />,
+                            em: ({ node, ...props }) => <em className="italic" {...props} />,
+                            h1: ({ node, ...props }) => <h1 className="text-lg font-bold text-white mt-2" {...props} />,
+                            h2: ({ node, ...props }) => <h2 className="text-base font-bold text-white mt-2" {...props} />,
+                            h3: ({ node, ...props }) => <h3 className="text-sm font-bold text-white mt-2" {...props} />,
+                          }}
+                        >
+                          {message.content}
+                        </ReactMarkdown>
+                      </div>
                     </div>
                   </div>
                 )}
