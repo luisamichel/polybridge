@@ -5,12 +5,13 @@ load_dotenv()
 import json
 import os
 from collections import defaultdict
+from collections.abc import AsyncIterator
 from typing import Any, Literal
 
 import httpx
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from openai import OpenAI
 from pydantic import BaseModel
 
@@ -19,7 +20,27 @@ from false_friends import _load as load_false_friends
 from tool_executor import execute_tool
 from tools import TOOLS
 
-MAX_TOOL_ITERATIONS = 5
+MAX_TOOL_ITERATIONS = 10
+
+SSE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "Access-Control-Allow-Origin": "*",
+}
+
+TOOL_DISPLAY_MESSAGES: dict[str, str] = {
+    "log_error": "Noting your mistake...",
+    "check_false_friend": "Checking false friends...",
+    "get_error_patterns": "Analyzing your patterns...",
+    "get_profile": "Reading your profile...",
+    "start_session": "Starting conversation mode...",
+    "start_conversation": "Starting conversation mode...",
+    "get_multilingual_profile": "Analyzing your multilingual profile...",
+    "generate_report": "Generating your report...",
+    "end_session": "Wrapping up session...",
+    "log_confirmed_false_friend": "Adding to false friends database...",
+    "generate_false_friends_for_profile": "Loading false friends data...",
+}
 
 DARTMOUTH_MODELS_URL = "https://chat.dartmouth.edu/api/models"
 MODEL_ID_KEYWORDS = ("claude", "gemini", "gpt", "llama")
@@ -90,71 +111,151 @@ def _openai_client() -> OpenAI:
     return OpenAI(api_key=api_key, base_url=base_url)
 
 
-def _assistant_message_to_dict(message: Any) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "role": "assistant",
-        "content": message.content,
-    }
-    if message.tool_calls:
+def _sse_event(payload: dict[str, Any]) -> str:
+    return f"data: {json.dumps(payload)}\n\n"
+
+
+def _tool_display_message(tool_name: str) -> str:
+    return TOOL_DISPLAY_MESSAGES.get(tool_name, "Thinking...")
+
+
+def _merge_tool_call_delta(
+    accumulated: dict[int, dict[str, Any]],
+    tool_call_delta: Any,
+) -> None:
+    index = tool_call_delta.index
+    if index not in accumulated:
+        accumulated[index] = {
+            "id": "",
+            "type": "function",
+            "function": {"name": "", "arguments": ""},
+        }
+
+    entry = accumulated[index]
+    if tool_call_delta.id:
+        entry["id"] = tool_call_delta.id
+    if tool_call_delta.function:
+        if tool_call_delta.function.name:
+            entry["function"]["name"] += tool_call_delta.function.name
+        if tool_call_delta.function.arguments:
+            entry["function"]["arguments"] += tool_call_delta.function.arguments
+
+
+def _assistant_message_from_stream(
+    content_parts: list[str],
+    tool_calls_accum: dict[int, dict[str, Any]],
+) -> dict[str, Any]:
+    # Tool-call turns may leak JSON fragments in content; keep content empty.
+    if tool_calls_accum:
+        payload: dict[str, Any] = {"role": "assistant", "content": None}
         payload["tool_calls"] = [
-            {
-                "id": tool_call.id,
-                "type": tool_call.type,
-                "function": {
-                    "name": tool_call.function.name,
-                    "arguments": tool_call.function.arguments,
-                },
-            }
-            for tool_call in message.tool_calls
+            tool_calls_accum[index]
+            for index in sorted(tool_calls_accum)
         ]
-    return payload
+        return payload
+
+    content = "".join(content_parts) if content_parts else None
+    return {"role": "assistant", "content": content}
 
 
-def _run_chat_with_tools(
-    client: OpenAI,
+def _execute_tool_call(tool_call: dict[str, Any]) -> str:
+    tool_name = tool_call["function"]["name"]
+    try:
+        tool_args = json.loads(tool_call["function"]["arguments"] or "{}")
+        if not isinstance(tool_args, dict):
+            tool_args = {}
+    except json.JSONDecodeError as exc:
+        return f"Error parsing tool arguments: {exc}"
+    return execute_tool(tool_name, tool_args)
+
+
+async def stream_chat_response(
     model: str,
     messages: list[dict[str, Any]],
-) -> str:
-    for _ in range(MAX_TOOL_ITERATIONS):
-        completion = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            tools=TOOLS,
-            stream=False,
-        )
-        choice = completion.choices[0]
-        message = choice.message
+) -> AsyncIterator[str]:
+    try:
+        client = _openai_client()
 
-        if choice.finish_reason != "tool_calls":
-            return message.content or ""
+        for iteration in range(MAX_TOOL_ITERATIONS):
+            if iteration > 0:
+                yield _sse_event({"type": "text_reset"})
 
-        if not message.tool_calls:
-            return message.content or ""
-
-        messages.append(_assistant_message_to_dict(message))
-
-        for tool_call in message.tool_calls:
-            tool_name = tool_call.function.name
-            try:
-                tool_args = json.loads(tool_call.function.arguments or "{}")
-                if not isinstance(tool_args, dict):
-                    tool_args = {}
-            except json.JSONDecodeError as exc:
-                result = f"Error parsing tool arguments: {exc}"
-            else:
-                result = execute_tool(tool_name, tool_args)
-
-            messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": result,
-                }
+            stream = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                tools=TOOLS,
+                stream=True,
             )
-    else:
-        raise RuntimeError(
-            f"Tool call limit reached after {MAX_TOOL_ITERATIONS} iterations"
+
+            content_parts: list[str] = []
+            tool_calls_accum: dict[int, dict[str, Any]] = {}
+            finish_reason: str | None = None
+            saw_tool_call_delta = False
+
+            for chunk in stream:
+                if not chunk.choices:
+                    continue
+
+                choice = chunk.choices[0]
+                if choice.finish_reason:
+                    finish_reason = choice.finish_reason
+
+                delta = choice.delta
+                if delta.tool_calls:
+                    saw_tool_call_delta = True
+                    for tool_call_delta in delta.tool_calls:
+                        _merge_tool_call_delta(tool_calls_accum, tool_call_delta)
+
+                if delta.content:
+                    content_parts.append(delta.content)
+                    if not saw_tool_call_delta:
+                        yield _sse_event(
+                            {"type": "text", "content": delta.content}
+                        )
+
+            if finish_reason == "tool_calls" and tool_calls_accum:
+                messages.append(
+                    _assistant_message_from_stream(content_parts, tool_calls_accum)
+                )
+
+                for tool_call in (
+                    tool_calls_accum[index]
+                    for index in sorted(tool_calls_accum)
+                ):
+                    tool_name = tool_call["function"]["name"]
+                    yield _sse_event(
+                        {
+                            "type": "tool_start",
+                            "tool": tool_name,
+                            "display": _tool_display_message(tool_name),
+                        }
+                    )
+                    result = _execute_tool_call(tool_call)
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call["id"],
+                            "content": result,
+                        }
+                    )
+                    yield _sse_event(
+                        {"type": "tool_end", "tool": tool_name}
+                    )
+                continue
+
+            yield _sse_event({"type": "done"})
+            return
+
+        yield _sse_event(
+            {
+                "type": "error",
+                "message": (
+                    f"Tool call limit reached after {MAX_TOOL_ITERATIONS} iterations"
+                ),
+            }
         )
+    except Exception as exc:
+        yield _sse_event({"type": "error", "message": str(exc)})
 
 app = FastAPI(title="PolyBridge API")
 
@@ -379,17 +480,13 @@ def list_models() -> list[dict[str, str]]:
 
 
 @app.post("/chat")
-def chat(request: ChatRequest):
-    try:
-        client = _openai_client()
-        messages: list[dict[str, Any]] = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            *[m.model_dump() for m in request.messages],
-        ]
-        content = _run_chat_with_tools(client, request.model, messages)
-        return {"response": content, "model": request.model}
-    except Exception as exc:
-        return JSONResponse(
-            status_code=500,
-            content={"error": str(exc)},
-        )
+async def chat(request: ChatRequest):
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        *[m.model_dump() for m in request.messages],
+    ]
+    return StreamingResponse(
+        stream_chat_response(request.model, messages),
+        media_type="text/event-stream",
+        headers=SSE_HEADERS,
+    )

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, Fragment, useEffect, useRef, useState } from "react";
 import { ArrowUp, Loader2, Sparkles } from "lucide-react";
 import { useChatModel } from "@/components/chat/ChatProvider";
 import { sendMessage, type Message as ApiMessage } from "@/lib/api";
@@ -9,6 +9,7 @@ type UiMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  isError?: boolean;
 };
 
 const welcomeMessage: UiMessage = {
@@ -18,22 +19,52 @@ const welcomeMessage: UiMessage = {
     "Welcome to PolyBridge! I'm here to help you practice languages through conversation. What would you like to work on today?",
 };
 
+/** Keep tool status visible long enough to read (tools finish on the server in ms). */
+const TOOL_INDICATOR_MIN_MS = 1200;
+
 export function ChatInterface() {
   const { selectedModelId, modelsLoading, modelsError } = useChatModel();
   const [messages, setMessages] = useState<UiMessage[]>([welcomeMessage]);
   const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [toolActivity, setToolActivity] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const toolHideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isLoading]);
+  }, [messages, toolActivity, isStreaming]);
+
+  useEffect(() => {
+    return () => {
+      if (toolHideTimeoutRef.current) {
+        clearTimeout(toolHideTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  function showToolActivity(display: string) {
+    if (toolHideTimeoutRef.current) {
+      clearTimeout(toolHideTimeoutRef.current);
+      toolHideTimeoutRef.current = null;
+    }
+    setToolActivity(display);
+  }
+
+  function scheduleHideToolActivity() {
+    if (toolHideTimeoutRef.current) {
+      clearTimeout(toolHideTimeoutRef.current);
+    }
+    toolHideTimeoutRef.current = setTimeout(() => {
+      setToolActivity(null);
+      toolHideTimeoutRef.current = null;
+    }, TOOL_INDICATOR_MIN_MS);
+  }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     const trimmed = input.trim();
-    if (!trimmed || isLoading || modelsLoading || !selectedModelId) return;
+    if (!trimmed || isStreaming || modelsLoading || !selectedModelId) return;
 
     const userMessage: UiMessage = {
       id: crypto.randomUUID(),
@@ -41,41 +72,90 @@ export function ChatInterface() {
       content: trimmed,
     };
 
-    const nextMessages = [...messages, userMessage];
+    const assistantId = crypto.randomUUID();
+    const assistantPlaceholder: UiMessage = {
+      id: assistantId,
+      role: "assistant",
+      content: "",
+    };
+
+    const nextMessages = [...messages, userMessage, assistantPlaceholder];
     setMessages(nextMessages);
     setInput("");
-    setError(null);
-    setIsLoading(true);
+    if (toolHideTimeoutRef.current) {
+      clearTimeout(toolHideTimeoutRef.current);
+      toolHideTimeoutRef.current = null;
+    }
+    setToolActivity(null);
+    setIsStreaming(true);
 
     const apiMessages: ApiMessage[] = nextMessages.map(({ role, content }) => ({
       role,
       content,
     }));
 
-    try {
-      const { response } = await sendMessage(apiMessages, selectedModelId);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: response,
-        },
-      ]);
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Could not get a response. Please try again.",
+    const clearAssistantContent = () => {
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === assistantId ? { ...message, content: "" } : message,
+        ),
       );
-    } finally {
-      setIsLoading(false);
-    }
+    };
+
+    await sendMessage(apiMessages, selectedModelId, {
+      onChunk: (text) => {
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === assistantId
+              ? { ...message, content: message.content + text }
+              : message,
+          ),
+        );
+      },
+      onTextReset: clearAssistantContent,
+      onToolStart: (display) => {
+        clearAssistantContent();
+        showToolActivity(display);
+      },
+      onToolEnd: () => {
+        scheduleHideToolActivity();
+      },
+      onDone: () => {
+        if (toolHideTimeoutRef.current) {
+          clearTimeout(toolHideTimeoutRef.current);
+          toolHideTimeoutRef.current = null;
+        }
+        setToolActivity(null);
+        setIsStreaming(false);
+      },
+      onError: (message) => {
+        if (toolHideTimeoutRef.current) {
+          clearTimeout(toolHideTimeoutRef.current);
+          toolHideTimeoutRef.current = null;
+        }
+        setToolActivity(null);
+        setIsStreaming(false);
+        setMessages((prev) => {
+          const withoutPlaceholder = prev.filter(
+            (message) => message.id !== assistantId,
+          );
+          return [
+            ...withoutPlaceholder,
+            {
+              id: crypto.randomUUID(),
+              role: "assistant",
+              content: message,
+              isError: true,
+            },
+          ];
+        });
+      },
+    });
   }
 
   const canSend =
     Boolean(input.trim()) &&
-    !isLoading &&
+    !isStreaming &&
     !modelsLoading &&
     Boolean(selectedModelId);
 
@@ -83,56 +163,86 @@ export function ChatInterface() {
     <div className="flex h-full flex-col">
       <div className="chat-scroll flex-1 overflow-y-auto px-4 py-6">
         <div className="mx-auto flex max-w-3xl flex-col gap-6">
-          {(modelsError || error) && (
+          {modelsError && (
             <div
               role="alert"
               className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300"
             >
-              {error ?? modelsError}
+              {modelsError}
             </div>
           )}
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className={`flex gap-3 ${
-                message.role === "user" ? "flex-row-reverse" : ""
-              }`}
-            >
-              <div
-                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-                  message.role === "assistant"
-                    ? "bg-accent/15 ring-1 ring-accent/25"
-                    : "bg-surface ring-1 ring-border"
-                }`}
-              >
-                {message.role === "assistant" ? (
-                  <Sparkles className="h-4 w-4 text-accent" />
-                ) : (
-                  <span className="text-xs font-medium text-zinc-400">You</span>
+          {messages.map((message, index) => {
+            const isLast = index === messages.length - 1;
+            const isStreamingAssistant =
+              message.role === "assistant" &&
+              !message.isError &&
+              isStreaming &&
+              isLast;
+            const previousMessage = index > 0 ? messages[index - 1] : null;
+            const reserveToolStatusSlot =
+              isStreamingAssistant && previousMessage?.role === "user";
+            const showMessageBubble =
+              message.role === "user" ||
+              Boolean(message.content) ||
+              message.isError;
+
+            return (
+              <Fragment key={message.id}>
+                {reserveToolStatusSlot && (
+                  <p
+                    className="min-h-5 pl-11 text-sm leading-5 text-accent-cyan/90"
+                    aria-live="polite"
+                  >
+                    {toolActivity ? (
+                      <span className="animate-pulse">{toolActivity}</span>
+                    ) : (
+                      <span className="invisible select-none" aria-hidden>
+                        &#8203;
+                      </span>
+                    )}
+                  </p>
                 )}
-              </div>
-              <div
-                className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                  message.role === "user"
-                    ? "bg-accent/15 text-foreground ring-1 ring-accent/20"
-                    : "bg-surface text-zinc-300 ring-1 ring-border-subtle"
-                }`}
-              >
-                <p className="whitespace-pre-wrap">{message.content}</p>
-              </div>
-            </div>
-          ))}
-          {isLoading && (
-            <div className="flex gap-3">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/15 ring-1 ring-accent/25">
-                <Sparkles className="h-4 w-4 text-accent" />
-              </div>
-              <div className="flex items-center gap-2 rounded-2xl bg-surface px-4 py-3 text-sm text-zinc-400 ring-1 ring-border-subtle">
-                <Loader2 className="h-4 w-4 animate-spin text-accent" />
-                <span>PolyBridge is thinking…</span>
-              </div>
-            </div>
-          )}
+                {showMessageBubble && (
+                  <div
+                    className={`flex gap-3 ${
+                      message.role === "user" ? "flex-row-reverse" : ""
+                    }`}
+                  >
+                    <div
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                        message.isError
+                          ? "bg-red-500/15 ring-1 ring-red-500/25"
+                          : message.role === "assistant"
+                            ? "bg-accent/15 ring-1 ring-accent/25"
+                            : "bg-surface ring-1 ring-border"
+                      }`}
+                    >
+                      {message.role === "assistant" ? (
+                        <Sparkles
+                          className={`h-4 w-4 ${message.isError ? "text-red-400" : "text-accent"}`}
+                        />
+                      ) : (
+                        <span className="text-xs font-medium text-zinc-400">
+                          You
+                        </span>
+                      )}
+                    </div>
+                    <div
+                      className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                        message.isError
+                          ? "bg-red-500/10 text-red-300 ring-1 ring-red-500/30"
+                          : message.role === "user"
+                            ? "bg-accent/15 text-foreground ring-1 ring-accent/20"
+                            : "bg-surface text-zinc-300 ring-1 ring-border-subtle"
+                      }`}
+                    >
+                      <p className="whitespace-pre-wrap">{message.content}</p>
+                    </div>
+                  </div>
+                )}
+              </Fragment>
+            );
+          })}
           <div ref={messagesEndRef} />
         </div>
       </div>
@@ -157,10 +267,12 @@ export function ChatInterface() {
                   ? "Loading models…"
                   : !selectedModelId
                     ? "Select a model to start chatting…"
-                    : "Message PolyBridge..."
+                    : isStreaming
+                      ? "Waiting for response…"
+                      : "Message PolyBridge..."
               }
               rows={1}
-              disabled={isLoading || modelsLoading || !selectedModelId}
+              disabled={isStreaming || modelsLoading || !selectedModelId}
               className="max-h-32 min-h-[48px] w-full resize-none rounded-xl border border-border bg-surface px-4 py-3 pr-12 text-sm text-foreground placeholder:text-zinc-600 focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/30 disabled:cursor-not-allowed disabled:opacity-60"
             />
           </div>
@@ -170,7 +282,7 @@ export function ChatInterface() {
             className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-accent text-white transition-colors hover:bg-accent-muted disabled:cursor-not-allowed disabled:opacity-40"
             aria-label="Send message"
           >
-            {isLoading ? (
+            {isStreaming ? (
               <Loader2 className="h-5 w-5 animate-spin" />
             ) : (
               <ArrowUp className="h-5 w-5" />

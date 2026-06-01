@@ -156,9 +156,63 @@ export interface ChatModel {
   name: string;
 }
 
-export interface ChatResponse {
-  response: string;
-  model: string;
+export type ChatStreamEvent =
+  | { type: "text"; content: string }
+  | { type: "text_reset" }
+  | { type: "tool_start"; tool: string; display: string }
+  | { type: "tool_end"; tool: string }
+  | { type: "done" }
+  | { type: "error"; message: string };
+
+export type ChatStreamCallbacks = {
+  onChunk: (text: string) => void;
+  onTextReset: () => void;
+  onToolStart: (display: string, tool: string) => void;
+  onToolEnd: () => void;
+  onDone: () => void;
+  onError: (message: string) => void;
+};
+
+function parseSseLine(line: string): ChatStreamEvent | null {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("data:")) {
+    return null;
+  }
+  const payload = trimmed.slice(5).trim();
+  if (!payload) {
+    return null;
+  }
+  try {
+    return JSON.parse(payload) as ChatStreamEvent;
+  } catch {
+    return null;
+  }
+}
+
+function dispatchStreamEvent(
+  event: ChatStreamEvent,
+  callbacks: ChatStreamCallbacks,
+): void {
+  switch (event.type) {
+    case "text":
+      callbacks.onChunk(event.content);
+      break;
+    case "text_reset":
+      callbacks.onTextReset();
+      break;
+    case "tool_start":
+      callbacks.onToolStart(event.display, event.tool);
+      break;
+    case "tool_end":
+      callbacks.onToolEnd();
+      break;
+    case "done":
+      callbacks.onDone();
+      break;
+    case "error":
+      callbacks.onError(event.message);
+      break;
+  }
 }
 
 export async function getModels(): Promise<ChatModel[]> {
@@ -173,25 +227,86 @@ export async function getModels(): Promise<ChatModel[]> {
 export async function sendMessage(
   messages: Message[],
   model: string,
-): Promise<ChatResponse> {
+  callbacks: ChatStreamCallbacks,
+): Promise<void> {
   const response = await fetch(`${API_BASE}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ messages, model }),
   });
 
-  const data: unknown = await response.json();
-
   if (!response.ok) {
-    const message =
-      typeof data === "object" &&
-      data !== null &&
-      "error" in data &&
-      typeof (data as { error: unknown }).error === "string"
-        ? (data as { error: string }).error
-        : "Something went wrong. Please try again.";
-    throw new Error(message);
+    let message = "Something went wrong. Please try again.";
+    try {
+      const data: unknown = await response.json();
+      if (
+        typeof data === "object" &&
+        data !== null &&
+        "error" in data &&
+        typeof (data as { error: unknown }).error === "string"
+      ) {
+        message = (data as { error: string }).error;
+      }
+    } catch {
+      // Response may not be JSON when streaming fails early.
+    }
+    callbacks.onError(message);
+    return;
   }
 
-  return data as ChatResponse;
+  const reader = response.body?.getReader();
+  if (!reader) {
+    callbacks.onError("No response body from server.");
+    return;
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finished = false;
+
+  const handleEvent = (event: ChatStreamEvent) => {
+    if (event.type === "done") {
+      finished = true;
+    }
+    if (event.type === "error") {
+      finished = true;
+    }
+    dispatchStreamEvent(event, callbacks);
+  };
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        const event = parseSseLine(line);
+        if (event) {
+          handleEvent(event);
+        }
+      }
+    }
+
+    buffer += decoder.decode();
+    for (const line of buffer.split("\n")) {
+      const event = parseSseLine(line);
+      if (event) {
+        handleEvent(event);
+      }
+    }
+
+    if (!finished) {
+      callbacks.onDone();
+    }
+  } catch (err) {
+    callbacks.onError(
+      err instanceof Error ? err.message : "Could not read stream.",
+    );
+  }
 }
