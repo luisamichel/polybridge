@@ -1,8 +1,13 @@
 import sqlite3
 from pathlib import Path
 from datetime import datetime
+from dotenv import load_dotenv
+import os
 
-DB_PATH = Path(__file__).parent / "data" / "polyglot.db"
+load_dotenv()
+
+DB_NAME = os.getenv("POLYBRIDGE_DB", "polyglot.db")
+DB_PATH = Path(__file__).parent / "data" / DB_NAME
 
 def get_connection():
     """Always use this to get a DB connection — never connect directly."""

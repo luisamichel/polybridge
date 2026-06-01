@@ -9,7 +9,7 @@ from collections.abc import AsyncIterator
 from typing import Any, Literal
 
 import httpx
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from openai import OpenAI
@@ -92,6 +92,10 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     messages: list[ChatMessage]
     model: str
+
+
+class ResetRequest(BaseModel):
+    confirm: bool
 
 
 def _dartmouth_api_key() -> str:
@@ -343,6 +347,32 @@ def _row_to_dict(row) -> dict[str, Any]:
 def _rows_to_list(rows) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
+@app.delete("/reset")
+def reset_data(body: ResetRequest):
+    """Clear all user data for a fresh start."""
+    if not body.confirm:
+        raise HTTPException(
+            status_code=400,
+            detail="Must send confirm=true to reset"
+        )
+    
+    with get_connection() as conn:
+        # Delete all records from the main tables
+        conn.execute("DELETE FROM errors")
+        conn.execute("DELETE FROM sessions")
+        conn.execute("DELETE FROM vocab")
+        conn.execute("DELETE FROM user_profile")
+        
+        # Reset the auto-increment counters so IDs start at 1 again
+        conn.execute(
+            "DELETE FROM sqlite_sequence WHERE name IN "
+            "('errors','sessions','vocab','user_profile')"
+        )
+    
+    return {
+        "status": "reset complete",
+        "message": "Ready for a new learner."
+    }
 
 @app.get("/profile")
 def get_profile() -> dict[str, Any]:

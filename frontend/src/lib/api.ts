@@ -310,3 +310,18 @@ export async function sendMessage(
     );
   }
 }
+
+export async function deleteReset(): Promise<void> {
+  // Adjust the URL if you have a global API_BASE_URL constant
+  const response = await fetch(`${API_BASE}/reset`, {
+    method: "DELETE",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ confirm: true }),
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to reset data");
+  }
+}

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Bot, Check, ChevronDown, Loader2, Sparkles } from "lucide-react";
 import { useChatModel } from "@/components/chat/ChatProvider";
+import NewLearnerButton from "./NewLearnerButton";
 
 export function Header() {
   const pathname = usePathname();
@@ -40,8 +41,9 @@ export function Header() {
     return null;
   }
 
-  return (
-    <header className="relative z-10 flex h-14 shrink-0 items-center border-b border-border-subtle/80 bg-background/50 px-5 backdrop-blur-md">
+return (
+    <header className="relative z-10 flex h-14 shrink-0 items-center justify-between border-b border-border-subtle/80 bg-background/50 px-5 backdrop-blur-md">
+      {/* LEFT SIDE: LLM Dropdown */}
       <div ref={dropdownRef} className="relative">
         <button
           type="button"
@@ -130,6 +132,11 @@ export function Header() {
             ))}
           </ul>
         )}
+      </div>
+
+      {/* RIGHT SIDE: New Learner Button */}
+      <div className="flex items-center gap-4">
+        <NewLearnerButton />
       </div>
     </header>
   );
