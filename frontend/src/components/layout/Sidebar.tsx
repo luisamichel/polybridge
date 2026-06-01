@@ -73,14 +73,6 @@ export function Sidebar() {
           );
         })}
       </nav>
-
-      <div className="border-t border-border-subtle p-4">
-        <p className="text-[11px] leading-relaxed text-muted/80">
-          Bridge languages with{" "}
-          <span className="text-gradient-brand font-medium">AI-powered</span>{" "}
-          practice.
-        </p>
-      </div>
     </aside>
   );
 }

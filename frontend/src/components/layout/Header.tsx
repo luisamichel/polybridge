@@ -1,10 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { Bot, Check, ChevronDown, Loader2, Sparkles } from "lucide-react";
 import { useChatModel } from "@/components/chat/ChatProvider";
 
 export function Header() {
+  const pathname = usePathname();
+  const isChatPage = pathname === "/";
+
   const {
     models,
     selectedModelId,
@@ -31,6 +35,10 @@ export function Header() {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  if (!isChatPage) {
+    return null;
+  }
 
   return (
     <header className="relative z-10 flex h-14 shrink-0 items-center border-b border-border-subtle/80 bg-background/50 px-5 backdrop-blur-md">

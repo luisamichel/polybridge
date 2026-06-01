@@ -6,6 +6,7 @@ from false_friends import (
     check_word, get_summary, has_coverage, 
     add_from_llm, get_for_profile
 )
+from tools import LOG_ERROR_CATEGORY_DESCRIPTION
 
 # Initialize DB and MCP server
 init_db()
@@ -110,7 +111,7 @@ def log_error(
     interference_lang: str = "unknown",
     notes: str = ""
 ) -> str:
-    """
+    f"""
     Log a language error made during conversation or study.
 
     Call this immediately whenever the user makes a mistake. Mistakes that are likely typos shouldn't be logged.
@@ -121,8 +122,7 @@ def log_error(
         mistake: exactly what the user said or wrote incorrectly
         correction: the correct form
         context: the full sentence where the error occurred
-        category: type of error, one of: 'grammar', 'vocab', 'false_friend',
-                  'gender', 'spelling', 'word_order'
+        category: {LOG_ERROR_CATEGORY_DESCRIPTION}
         interference_lang: which native language likely caused this error.
                            Use the language code from their profile (e.g. 'EN', 'PT')
                            or 'none' if unrelated to native language interference

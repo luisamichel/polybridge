@@ -32,6 +32,19 @@ FALSE_FRIEND_DANGER_LEVELS = ("high", "medium")
 
 PROFICIENCY_LEVELS = ("beginner", "intermediate", "advanced")
 
+LOG_ERROR_CATEGORY_DESCRIPTION = """MUST be exactly one of these values, nothing else:
+'grammar' - incorrect grammar structure
+'vocab' - wrong word choice
+'false_friend' - false cognate error
+'gender' - wrong grammatical gender
+'spelling' - spelling mistake
+'word_order' - wrong word order
+'unknown' - when unsure
+
+NEVER put a sentence, explanation, or anything else here.
+NEVER put the context sentence here.
+If unsure, use 'unknown'."""
+
 LOG_ERROR = {
     "type": "function",
     "function": {
@@ -61,10 +74,7 @@ LOG_ERROR = {
                 "category": {
                     "type": "string",
                     "enum": list(LOG_ERROR_CATEGORIES),
-                    "description": (
-                        "Type of error — one of: 'grammar', 'vocab', 'false_friend', "
-                        "'gender', 'spelling', 'word_order'"
-                    ),
+                    "description": LOG_ERROR_CATEGORY_DESCRIPTION,
                 },
                 "interference_lang": {
                     "type": "string",
