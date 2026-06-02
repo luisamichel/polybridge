@@ -21,6 +21,7 @@ export default function NewLearnerButton() {
     try {
       await deleteReset();
       window.dispatchEvent(new Event("profileUpdated"));
+      window.dispatchEvent(new Event("chatReset"));
       setIsOpen(false);
       
       router.push("/");

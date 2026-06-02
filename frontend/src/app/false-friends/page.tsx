@@ -7,6 +7,7 @@ import {
   Loader2,
   Upload,
 } from "lucide-react";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { DeckTile } from "@/components/flashcards/DeckTile";
 import {
   StudySession,
@@ -241,11 +242,12 @@ export default function FlashcardsPage() {
               </div>
 
               {pairs.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-border bg-surface/50 px-6 py-10 text-center">
-                  <p className="text-sm text-muted">
-                    No false friend decks for your profile yet.
-                  </p>
-                </div>
+                <EmptyState
+                  message="No false friends encountered yet."
+                  description="They'll appear here as you practice."
+                  actionLabel="Start practicing"
+                  actionHref="/"
+                />
               ) : (
                 <div className="-mx-6 flex gap-4 overflow-x-auto px-6 pb-2">
                   {pairs.map((deck) => {

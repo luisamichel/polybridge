@@ -11,8 +11,14 @@ import {
 } from "react";
 import { ArrowUp, Loader2, Sparkles } from "lucide-react";
 import { useChatModel, type ChatUiMessage } from "@/components/chat/ChatProvider";
+import {
+  getSuggestedPrompts,
+  isWelcomeOnlyState,
+} from "@/components/chat/welcome";
+import { chatMarkdownComponents } from "@/components/chat/chatMarkdown";
 import { sendMessage, type Message as ApiMessage } from "@/lib/api";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 /** Keep tool status visible long enough to read (tools finish on the server in ms). */
 const TOOL_INDICATOR_MIN_MS = 1200;
 
@@ -22,7 +28,13 @@ type ChatInterfaceProps = {
 };
 
 export function ChatInterface({ messages, setMessages }: ChatInterfaceProps) {
-  const { selectedModelId, modelsLoading, modelsError } = useChatModel();
+  const {
+    selectedModelId,
+    modelsLoading,
+    modelsError,
+    hasProfile,
+    targetLanguage,
+  } = useChatModel();
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [toolActivity, setToolActivity] = useState<string | null>(null);
@@ -59,9 +71,8 @@ export function ChatInterface({ messages, setMessages }: ChatInterfaceProps) {
     }, TOOL_INDICATOR_MIN_MS);
   }
 
-  async function handleSubmit(event: FormEvent) {
-    event.preventDefault();
-    const trimmed = input.trim();
+  async function sendUserMessage(text: string) {
+    const trimmed = text.trim();
     if (!trimmed || isStreaming || modelsLoading || !selectedModelId) return;
 
     const userMessage: ChatUiMessage = {
@@ -79,7 +90,6 @@ export function ChatInterface({ messages, setMessages }: ChatInterfaceProps) {
 
     const nextMessages = [...messages, userMessage, assistantPlaceholder];
     setMessages(nextMessages);
-    setInput("");
     if (toolHideTimeoutRef.current) {
       clearTimeout(toolHideTimeoutRef.current);
       toolHideTimeoutRef.current = null;
@@ -101,11 +111,11 @@ export function ChatInterface({ messages, setMessages }: ChatInterfaceProps) {
     };
 
     await sendMessage(apiMessages, selectedModelId, {
-      onChunk: (text) => {
+      onChunk: (chunk) => {
         setMessages((prev) =>
           prev.map((message) =>
             message.id === assistantId
-              ? { ...message, content: message.content + text }
+              ? { ...message, content: message.content + chunk }
               : message,
           ),
         );
@@ -153,11 +163,27 @@ export function ChatInterface({ messages, setMessages }: ChatInterfaceProps) {
     });
   }
 
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    const trimmed = input.trim();
+    if (!trimmed) return;
+
+    await sendUserMessage(trimmed);
+    setInput("");
+  }
+
   const canSend =
     Boolean(input.trim()) &&
     !isStreaming &&
     !modelsLoading &&
     Boolean(selectedModelId);
+
+  const showSuggestedPrompts = isWelcomeOnlyState(messages);
+  const suggestedPrompts = getSuggestedPrompts(hasProfile, targetLanguage);
+
+  function handleSuggestedPrompt(prompt: string) {
+    void sendUserMessage(prompt);
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -239,17 +265,8 @@ export function ChatInterface({ messages, setMessages }: ChatInterfaceProps) {
                       {/* Wrap the markdown component in a div to apply the flex layout */}
                       <div className="flex flex-col gap-2">
                         <ReactMarkdown
-                          components={{
-                            p: ({ node, ...props }) => <p className="whitespace-pre-wrap" {...props} />,
-                            ul: ({ node, ...props }) => <ul className="list-disc pl-5 space-y-1" {...props} />,
-                            ol: ({ node, ...props }) => <ol className="list-decimal pl-5 space-y-1" {...props} />,
-                            li: ({ node, ...props }) => <li className="pl-1" {...props} />,
-                            strong: ({ node, ...props }) => <strong className="font-semibold text-white" {...props} />,
-                            em: ({ node, ...props }) => <em className="italic" {...props} />,
-                            h1: ({ node, ...props }) => <h1 className="text-lg font-bold text-white mt-2" {...props} />,
-                            h2: ({ node, ...props }) => <h2 className="text-base font-bold text-white mt-2" {...props} />,
-                            h3: ({ node, ...props }) => <h3 className="text-sm font-bold text-white mt-2" {...props} />,
-                          }}
+                          remarkPlugins={[remarkGfm]}
+                          components={chatMarkdownComponents}
                         >
                           {message.content}
                         </ReactMarkdown>
@@ -260,6 +277,21 @@ export function ChatInterface({ messages, setMessages }: ChatInterfaceProps) {
               </Fragment>
             );
           })}
+          {showSuggestedPrompts ? (
+            <div className="flex flex-wrap gap-1.5 pl-11">
+              {suggestedPrompts.map((prompt) => (
+                <button
+                  key={prompt}
+                  type="button"
+                  onClick={() => handleSuggestedPrompt(prompt)}
+                  disabled={isStreaming || modelsLoading || !selectedModelId}
+                  className="rounded-full border border-accent/40 bg-accent/15 px-2.5 py-1 text-xs font-medium text-foreground/90 shadow-sm shadow-accent/10 ring-1 ring-accent/20 transition-colors hover:border-accent/55 hover:bg-accent/25 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {prompt}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <div ref={messagesEndRef} />
         </div>
       </div>

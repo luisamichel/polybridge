@@ -9,6 +9,7 @@ import {
   Loader2,
   Search,
 } from "lucide-react";
+import Link from "next/link";
 import {
   getErrorPatterns,
   getErrors,
@@ -564,16 +565,24 @@ export default function ErrorNotebookPage() {
                     {tab === "archived" && archivedErrors.length === 0
                       ? "No archived errors yet"
                       : errors?.length === 0
-                        ? "No errors recorded yet"
+                        ? "No mistakes logged yet."
                         : "Nothing matches your filters"}
                   </p>
                   <p className="mt-2 max-w-sm text-sm text-[#7a6f5e]">
                     {tab === "archived"
                       ? "Hover over an error and click Archive to move it here."
                       : errors?.length === 0
-                        ? "Start a chat session — every correction you receive will land here automatically."
+                        ? "Start a conversation to begin tracking your French."
                         : "Try a different search term or category filter."}
                   </p>
+                  {tab === "active" && errors?.length === 0 ? (
+                    <Link
+                      href="/"
+                      className="mt-5 inline-flex rounded-full bg-[#3d3428] px-4 py-2 text-sm font-medium text-[#ebe5d4] transition-opacity hover:opacity-90"
+                    >
+                      Start a conversation
+                    </Link>
+                  ) : null}
                 </div>
               ) : (
                 <div className="space-y-6 px-6 py-8 sm:px-10">

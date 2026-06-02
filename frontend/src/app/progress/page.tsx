@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Calendar, Loader2, Repeat } from "lucide-react";
+import { EmptyState } from "@/components/ui/EmptyState";
 import {
   getErrorPatterns,
   getSessions,
@@ -142,6 +143,11 @@ export default function ProgressPage() {
 
   const repeatedMistakes = patterns?.repeated_mistakes ?? [];
   const sessionList = sessions ?? [];
+  const hasNoProgressData =
+    !loading &&
+    !loadError &&
+    stats.totalErrors === "0" &&
+    sessionList.length === 0;
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
@@ -193,6 +199,15 @@ export default function ProgressPage() {
           )}
         </section>
 
+        {hasNoProgressData ? (
+          <EmptyState
+            message="No data yet."
+            description="Have a conversation to see your progress here."
+            actionLabel="Go to chat"
+            actionHref="/"
+          />
+        ) : (
+          <>
         <section className="mb-8">
           <div className="mb-4 flex items-center gap-2">
             <Calendar className="h-4 w-4 text-accent-cyan" />
@@ -205,9 +220,12 @@ export default function ProgressPage() {
               Loading sessions…
             </div>
           ) : sessionList.length === 0 ? (
-            <p className="rounded-xl border border-border-subtle bg-surface/60 px-4 py-8 text-center text-sm text-muted">
-              No sessions yet. Start a conversation to track your progress.
-            </p>
+            <EmptyState
+              message="No sessions yet."
+              description="Start a conversation to track your progress."
+              actionLabel="Go to chat"
+              actionHref="/"
+            />
           ) : (
             <ul className="flex flex-col gap-2">
               {sessionList.map((session) => (
@@ -247,10 +265,12 @@ export default function ProgressPage() {
               Loading patterns…
             </div>
           ) : repeatedMistakes.length === 0 ? (
-            <p className="rounded-xl border border-border-subtle bg-surface/60 px-4 py-8 text-center text-sm text-muted">
-              No repeated mistakes yet — keep practicing and we will highlight
-              patterns here.
-            </p>
+            <EmptyState
+              message="No repeated mistakes yet."
+              description="Keep practicing and we will highlight patterns here."
+              actionLabel="Practice in chat"
+              actionHref="/"
+            />
           ) : (
             <ul className="flex flex-col gap-2">
               {repeatedMistakes.map((item, index) => (
@@ -271,6 +291,8 @@ export default function ProgressPage() {
             </ul>
           )}
         </section>
+          </>
+        )}
 
       </div>
     </div>

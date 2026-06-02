@@ -11,7 +11,12 @@ import {
   type ReactNode,
   type SetStateAction,
 } from "react";
-import { getModels, type ChatModel } from "@/lib/api";
+import { getModels, getProfile, type ChatModel } from "@/lib/api";
+import { isProfileConfigured } from "@/lib/profile";
+import {
+  buildWelcomeMessage,
+  isWelcomeOnlyState,
+} from "@/components/chat/welcome";
 
 export type ChatUiMessage = {
   id: string;
@@ -19,15 +24,6 @@ export type ChatUiMessage = {
   content: string;
   isError?: boolean;
 };
-
-const welcomeMessage: ChatUiMessage = {
-  id: "welcome",
-  role: "assistant",
-  content:
-    "Welcome to PolyBridge! I'm here to help you practice languages through conversation. What would you like to work on today?",
-};
-
-const initialMessages: ChatUiMessage[] = [welcomeMessage];
 
 type ChatContextValue = {
   models: ChatModel[];
@@ -37,6 +33,8 @@ type ChatContextValue = {
   modelsError: string | null;
   messages: ChatUiMessage[];
   setMessages: Dispatch<SetStateAction<ChatUiMessage[]>>;
+  hasProfile: boolean;
+  targetLanguage: string | null;
 };
 
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -46,7 +44,24 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [selectedModelId, setSelectedModelId] = useState("");
   const [modelsLoading, setModelsLoading] = useState(true);
   const [modelsError, setModelsError] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatUiMessage[]>(initialMessages);
+  const [messages, setMessages] = useState<ChatUiMessage[]>([]);
+  const [hasProfile, setHasProfile] = useState(false);
+  const [targetLanguage, setTargetLanguage] = useState<string | null>(null);
+
+  const syncProfile = useCallback(async () => {
+    const profile = await getProfile();
+    const configured = isProfileConfigured(profile);
+    setHasProfile(configured);
+    setTargetLanguage(
+      configured ? profile?.target_language?.trim() ?? null : null,
+    );
+    return configured;
+  }, []);
+
+  const resetToWelcome = useCallback(async () => {
+    const configured = await syncProfile();
+    setMessages([buildWelcomeMessage(configured)]);
+  }, [syncProfile]);
 
   const loadModels = useCallback(async () => {
     setModelsLoading(true);
@@ -74,6 +89,32 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     void loadModels();
   }, [loadModels]);
 
+  useEffect(() => {
+    void resetToWelcome();
+  }, [resetToWelcome]);
+
+  useEffect(() => {
+    const handleChatReset = () => {
+      void resetToWelcome();
+    };
+    window.addEventListener("chatReset", handleChatReset);
+    return () => window.removeEventListener("chatReset", handleChatReset);
+  }, [resetToWelcome]);
+
+  useEffect(() => {
+    const handleProfileUpdated = () => {
+      void syncProfile().then((configured) => {
+        setMessages((current) => {
+          if (!isWelcomeOnlyState(current)) return current;
+          return [buildWelcomeMessage(configured)];
+        });
+      });
+    };
+    window.addEventListener("profileUpdated", handleProfileUpdated);
+    return () =>
+      window.removeEventListener("profileUpdated", handleProfileUpdated);
+  }, [syncProfile]);
+
   const value = useMemo(
     () => ({
       models,
@@ -83,8 +124,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       modelsError,
       messages,
       setMessages,
+      hasProfile,
+      targetLanguage,
     }),
-    [models, selectedModelId, modelsLoading, modelsError, messages],
+    [
+      models,
+      selectedModelId,
+      modelsLoading,
+      modelsError,
+      messages,
+      hasProfile,
+      targetLanguage,
+    ],
   );
 
   return (
