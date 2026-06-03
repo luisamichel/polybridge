@@ -24,14 +24,14 @@
   --gradient-accent: linear-gradient(135deg, #9333ea 0%, #06b6d4 100%);
   --gradient-surface: linear-gradient(
     160deg,
-    rgba(168, 85, 247, 0.12) 0%,
-    rgba(6, 182, 212, 0.06) 50%,
+    rgba(168, 85, 247, 0.08) 0%,
+    rgba(6, 182, 212, 0.04) 50%,
     transparent 100%
   );
   --gradient-glow: radial-gradient(
     ellipse at top left,
-    rgba(168, 85, 247, 0.14) 0%,
-    rgba(6, 182, 212, 0.06) 40%,
+    rgba(168, 85, 247, 0.08) 0%,
+    rgba(6, 182, 212, 0.03) 40%,
     transparent 70%
   );
 }

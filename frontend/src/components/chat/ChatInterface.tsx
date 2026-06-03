@@ -170,8 +170,8 @@ export function ChatInterface({ messages, setMessages }: ChatInterfaceProps) {
               isStreamingAssistant && previousMessage?.role === "user";
             const showStreamingStatus =
               showStreamingStatusArea &&
-              (!message.content || Boolean(toolActivity));
-            const streamingStatusText = toolActivity ?? THINKING_STATUS;
+              (Boolean(toolActivity) || !message.content);
+            const streamingStatusText = toolActivity ? toolActivity : THINKING_STATUS;
             const showMessageBubble =
               message.role === "user" ||
               Boolean(message.content) ||

@@ -150,7 +150,7 @@ function ExportButton({
       <button
         type="button"
         disabled
-        className="flex items-center gap-1.5 rounded-full bg-surface/80 px-2.5 py-1 text-xs text-muted ring-1 ring-border-subtle"
+        className="flex items-center gap-1 rounded-full bg-surface/80 px-2 py-0.5 text-[10px] text-muted ring-1 ring-border-subtle"
       >
         <Loader2 className="h-3 w-3 animate-spin" />
         Exporting...
@@ -160,7 +160,7 @@ function ExportButton({
 
   if (success) {
     return (
-      <div className="flex items-center gap-1.5 rounded-full bg-green-500/10 px-2.5 py-1 text-xs text-green-600 ring-1 ring-green-500/20">
+      <div className="flex items-center gap-1 rounded-full bg-green-500/10 px-2 py-0.5 text-[10px] text-green-600 ring-1 ring-green-500/20">
         <Check className="h-3 w-3" />
         {success}
       </div>
@@ -172,7 +172,7 @@ function ExportButton({
       <button
         type="button"
         onClick={onClick}
-        className="flex items-center gap-1.5 rounded-full bg-red-500/10 px-2.5 py-1 text-xs text-red-600 ring-1 ring-red-500/20 hover:bg-red-500/20"
+        className="flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] text-red-600 ring-1 ring-red-500/20 hover:bg-red-500/20"
       >
         <X className="h-3 w-3" />
         {error}
@@ -184,7 +184,7 @@ function ExportButton({
     <button
       type="button"
       onClick={onClick}
-      className="flex items-center gap-1.5 rounded-full bg-surface/80 px-2.5 py-1 text-xs text-muted ring-1 ring-border-subtle hover:bg-surface-hover"
+      className="flex items-center gap-1 rounded-full bg-surface/80 px-2 py-0.5 text-[10px] text-muted ring-1 ring-border-subtle hover:bg-surface-hover"
     >
       <ExternalLink className="h-3 w-3" />
       Anki
@@ -301,7 +301,7 @@ export default function FlashcardsPage() {
       [deckType]: {
         loading: false,
         success: result ? `${result.added} cards added to Anki` : null,
-        error: result ? null : "Failed — is Anki open?",
+        error: result ? null : "Failed: is Anki open?",
       },
     }));
   }
