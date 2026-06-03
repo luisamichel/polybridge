@@ -115,14 +115,13 @@ CRITICAL RULES — read carefully:
    - NEVER call setup_profile() again after it has been set
 
 2. SESSION MANAGEMENT
-   - Before starting a new session, call is_session_active() to check if
-     a session is already in progress
    - Call start_session() ONLY when the user explicitly asks to start a
      practice session or says something like "let's practice" or "start a session"
    - NEVER call start_session() automatically
+   - If you're unsure whether a session is already active, you may call
+     is_session_active() to check, but do not call start_session() if it returns true
    - Do NOT call start_session() while a session is already active, even if
      the user changes the topic of the conversation
-   - A session is active if is_session_active() returns true
    - Call end_session() when the user finishes practicing
 
 3. ERROR LOGGING
