@@ -422,6 +422,74 @@ GENERATE_FALSE_FRIENDS_FOR_PROFILE = {
     },
 }
 
+LOG_VOCAB_LOOKUP = {
+    "type": "function",
+    "function": {
+        "name": "log_vocab_lookup",
+        "description": (
+            "Log a word the user asked about. Call this when the user asks\n"
+            "what a word means, asks for a translation, or seems confused\n"
+            "about a word you used. Do NOT call for words they already know."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "word": {
+                    "type": "string",
+                    "description": "The word in the target language",
+                },
+                "translation": {
+                    "type": "string",
+                    "description": (
+                        "Meaning in the user's native language(s). "
+                        "Include both EN and PT translations if relevant. "
+                        'e.g. "siren / sireia (PT)"'
+                    ),
+                },
+                "example_sentence": {
+                    "type": "string",
+                    "description": (
+                        "The sentence where this word appeared, "
+                        "or a good example sentence using the word"
+                    ),
+                },
+                "notes": {
+                    "type": "string",
+                    "description": (
+                        "Any helpful memory tip, etymology, or usage note. "
+                        'e.g. "same root as English \'siren\', used for '
+                        'mermaid in French (not just alarm)"'
+                    ),
+                },
+            },
+            "required": ["word", "translation"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+GET_VOCAB_LIST = {
+    "type": "function",
+    "function": {
+        "name": "get_vocab_list",
+        "description": (
+            "Get the user's saved vocabulary words. Call when\n"
+            "user asks to see their vocab list or review saved words."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of words to return (default 20)",
+                },
+            },
+            "required": [],
+            "additionalProperties": False,
+        },
+    },
+}
+
 TOOLS = [
     SETUP_PROFILE,
     GET_PROFILE,
@@ -435,6 +503,8 @@ TOOLS = [
     CHECK_FALSE_FRIEND,
     LOG_CONFIRMED_FALSE_FRIEND,
     GENERATE_FALSE_FRIENDS_FOR_PROFILE,
+    LOG_VOCAB_LOOKUP,
+    GET_VOCAB_LIST,
 ]
 
 TOOL_NAMES = {tool["function"]["name"] for tool in TOOLS}

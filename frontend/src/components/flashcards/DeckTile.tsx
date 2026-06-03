@@ -6,6 +6,7 @@ type DeckTileProps = {
   subtitleClass: string;
   onClick: () => void;
   disabled?: boolean;
+  emptyMessage?: string;
 };
 
 export function DeckTile({
@@ -16,6 +17,7 @@ export function DeckTile({
   subtitleClass,
   onClick,
   disabled = false,
+  emptyMessage,
 }: DeckTileProps) {
   return (
     <button
@@ -27,6 +29,7 @@ export function DeckTile({
           ? "cursor-not-allowed opacity-50"
           : "cursor-pointer hover:scale-[1.02] hover:border-accent/40 hover:shadow-lg"
       }`}
+      title={disabled || count === 0 ? emptyMessage : undefined}
     >
       <div className="relative">
         <p
@@ -38,9 +41,15 @@ export function DeckTile({
           {label}
         </h3>
       </div>
-      <p className="relative text-sm text-muted">
-        {count} {count === 1 ? "card" : "cards"}
-      </p>
+      {disabled || count === 0 ? (
+        <p className="relative text-xs text-muted leading-tight">
+          {emptyMessage || "No cards available yet."}
+        </p>
+      ) : (
+        <p className="relative text-sm text-muted">
+          {count} {count === 1 ? "card" : "cards"}
+        </p>
+      )}
     </button>
   );
 }

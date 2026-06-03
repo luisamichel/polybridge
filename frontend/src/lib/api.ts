@@ -53,6 +53,15 @@ export interface FalseFriend {
   first_seen: string | null;
 }
 
+export interface VocabLookup {
+  id: number;
+  word: string;
+  translation: string | null;
+  target_language: string | null;
+  first_seen: string | null;
+  notes: string | null;
+}
+
 export interface FalseFriendCard {
   native_lang: string;
   target_lang: string;
@@ -123,6 +132,11 @@ export async function getErrorPatterns(): Promise<ErrorPatterns | null> {
 
 export async function getFalseFriends(): Promise<FalseFriend[] | null> {
   return fetchJson<FalseFriend[]>("/false-friends");
+}
+
+export async function getVocabLookups(limit?: number): Promise<VocabLookup[] | null> {
+  const query = limit !== undefined ? `?limit=${limit}` : "";
+  return fetchJson<VocabLookup[]>(`/vocab/lookups${query}`);
 }
 
 export async function getFalseFriendsByPair(): Promise<

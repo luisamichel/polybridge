@@ -16,9 +16,11 @@ import {
 import {
   getFalseFriendsByPair,
   getRecentDeck,
+  getVocabLookups,
   type FalseFriendCard,
   type FalseFriendsByPair,
   type RecentDeckCard,
+  type VocabLookup,
 } from "@/lib/api";
 
 type ActiveDeck = {
@@ -62,6 +64,15 @@ function recentToStudyCard(card: RecentDeckCard, index: number): StudyCard {
       ? `${card.category.replace(/_/g, " ")}${interference}`
       : undefined,
     note: card.note ?? undefined,
+  };
+}
+
+function vocabToStudyCard(card: VocabLookup, index: number): StudyCard {
+  return {
+    id: `vocab-${card.id}-${index}`,
+    front: card.word,
+    back: card.translation || "N/A",
+    note: card.notes || undefined,
   };
 }
 
@@ -120,6 +131,7 @@ function ComingSoonButton({
 export default function FlashcardsPage() {
   const [pairs, setPairs] = useState<FalseFriendsByPair[]>([]);
   const [recentDeck, setRecentDeck] = useState<RecentDeckCard[]>([]);
+  const [vocabLookups, setVocabLookups] = useState<VocabLookup[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchFailed, setFetchFailed] = useState(false);
   const [activeDeck, setActiveDeck] = useState<ActiveDeck | null>(null);
@@ -131,19 +143,21 @@ export default function FlashcardsPage() {
       setLoading(true);
       setFetchFailed(false);
 
-      const [pairsData, recentData] = await Promise.all([
+      const [pairsData, recentData, vocabData] = await Promise.all([
         getFalseFriendsByPair(),
         getRecentDeck(),
+        getVocabLookups(),
       ]);
 
       if (cancelled) return;
 
-      if (pairsData === null && recentData === null) {
+      if (pairsData === null && recentData === null && vocabData === null) {
         setFetchFailed(true);
       }
 
       setPairs(pairsData ?? []);
       setRecentDeck(recentData ?? []);
+      setVocabLookups(vocabData ?? []);
       setLoading(false);
     }
 
@@ -159,6 +173,11 @@ export default function FlashcardsPage() {
     [recentDeck],
   );
 
+  const vocabCards = useMemo(
+    () => vocabLookups.map(vocabToStudyCard),
+    [vocabLookups],
+  );
+
   function openFalseFriendsDeck(deck: FalseFriendsByPair) {
     setActiveDeck({
       sectionLabel: "False friends",
@@ -169,9 +188,17 @@ export default function FlashcardsPage() {
 
   function openRecentDeck() {
     setActiveDeck({
-      sectionLabel: "From your mistakes",
+      sectionLabel: "From your conversations",
       deckTitle: "Recent slip-ups",
       cards: recentCards,
+    });
+  }
+
+  function openVocabDeck() {
+    setActiveDeck({
+      sectionLabel: "From your conversations",
+      deckTitle: "Words I looked up",
+      cards: vocabCards,
     });
   }
 
@@ -275,14 +302,14 @@ export default function FlashcardsPage() {
               )}
             </section>
 
-            {/* From your mistakes */}
+            {/* From your conversations */}
             <section>
               <div className="mb-4">
                 <h2 className="text-lg font-semibold text-foreground">
-                  From your mistakes
+                  From your conversations
                 </h2>
                 <p className="mt-1 text-sm text-muted">
-                  Auto-built from your errors notebook.
+                  Auto-built from your practices.
                 </p>
               </div>
 
@@ -295,6 +322,16 @@ export default function FlashcardsPage() {
                   subtitleClass="text-accent-violet"
                   onClick={openRecentDeck}
                   disabled={recentDeck.length === 0}
+                />
+                <DeckTile
+                  subtitle="MY VOCABULARY"
+                  label="Words I looked up"
+                  count={vocabLookups.length}
+                  gradientClass="hover:shadow-emerald-500/15 bg-gradient-to-br from-emerald-900/35 via-teal-900/15 to-surface"
+                  subtitleClass="text-emerald-400"
+                  onClick={openVocabDeck}
+                  disabled={vocabLookups.length === 0}
+                  emptyMessage="No words saved yet. Ask about any word during conversation — It will be added here automatically."
                 />
               </div>
             </section>

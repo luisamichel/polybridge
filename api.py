@@ -495,6 +495,22 @@ def get_false_friends() -> list[dict[str, Any]]:
     return _rows_to_list(rows)
 
 
+@app.get("/vocab/lookups")
+def get_vocab_lookups(limit: int = Query(50, ge=1, le=500)) -> list[dict[str, Any]]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, word, translation, target_language, first_seen, cognate_in as notes
+            FROM vocab
+            WHERE is_false_friend = 0
+            ORDER BY first_seen DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    return _rows_to_list(rows)
+
+
 @app.get("/sessions")
 def get_sessions() -> list[dict[str, Any]]:
     with get_connection() as conn:

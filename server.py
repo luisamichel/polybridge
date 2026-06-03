@@ -693,6 +693,108 @@ def generate_false_friends_for_profile() -> str:
     )
 
 # ============================================================
+# VOCABULARY TOOLS
+# ============================================================
+
+@mcp.tool()
+def log_vocab_lookup(
+    word: str,
+    translation: str,
+    example_sentence: str = "",
+    notes: str = ""
+) -> str:
+    """
+    Log a word that the user asked about during conversation.
+    
+    WHEN TO USE THIS TOOL:
+    Call this immediately when:
+    - The user asks "what does X mean?"
+    - The user asks "what is X?"
+    - The user asks for a translation of a specific word
+    - The user seems confused about a word you used and you explain it
+    - The user explicitly asks to save or remember a word
+    
+    Do NOT call this for:
+    - Words the user already clearly knows
+    - Words you mention in passing without the user asking
+    - Error corrections (use log_error for those)
+    
+    Args:
+        word: the word in the target language exactly as it appeared
+        translation: the meaning in the user's native language(s).
+                     Include both EN and PT translations if relevant.
+                     e.g. "siren / sireia (PT)"
+        example_sentence: the sentence where this word appeared, 
+                          or a good example sentence using the word
+        notes: any helpful memory tip, etymology, or usage note.
+               e.g. "same root as English 'siren', used for 
+               mermaid in French (not just alarm)"
+    
+    Returns confirmation with the word added.
+    """
+    with get_connection() as conn:
+        # Check if word already exists for this language
+        profile = conn.execute(
+            "SELECT target_language FROM user_profile LIMIT 1"
+        ).fetchone()
+        
+        target_lang = profile["target_language"] if profile else "unknown"
+        
+        existing = conn.execute(
+            "SELECT id FROM vocab WHERE word = ? AND target_language = ?",
+            (word.lower().strip(), target_lang)
+        ).fetchone()
+        
+        if existing:
+            return f"'{word}' is already in your vocab list."
+        
+        conn.execute("""
+            INSERT INTO vocab 
+            (word, translation, target_language, is_false_friend, 
+             priority, first_seen, cognate_in)
+            VALUES (?, ?, ?, 0, 'normal', datetime('now'), ?)
+        """, (
+            word.lower().strip(),
+            translation,
+            target_lang,
+            notes  # reusing cognate_in column for notes temporarily
+        ))
+    
+    return (
+        f"✓ '{word}' added to your vocab list!\n"
+        f"  Meaning: {translation}\n"
+        f"  It will appear in your Vocabulary flashcards."
+    )
+
+@mcp.tool()
+def get_vocab_list(limit: int = 20) -> str:
+    """
+    Get the user's saved vocabulary words.
+    Use this when the user asks to review their vocab list
+    or wants to see words they have looked up.
+    """
+    with get_connection() as conn:
+        words = conn.execute("""
+            SELECT word, translation, first_seen, cognate_in as notes
+            FROM vocab
+            WHERE is_false_friend = 0
+            ORDER BY first_seen DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+    
+    if not words:
+        return "No vocabulary words saved yet. Ask about any word during conversation and I will add it to your list."
+    
+    lines = [f"Your saved vocabulary ({len(words)} words):\n"]
+    for w in words:
+        lines.append(f"  {w['word']} → {w['translation']}")
+        if w['notes']:
+            lines.append(f"    💡 {w['notes']}")
+    
+    return "\n".join(lines)
+
+
+# ============================================================
 # RUN SERVER
 # ============================================================
 

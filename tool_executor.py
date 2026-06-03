@@ -7,8 +7,10 @@ from server import (
     get_multilingual_profile,
     get_profile,
     get_recent_errors,
+    get_vocab_list,
     log_confirmed_false_friend,
     log_error,
+    log_vocab_lookup,
     setup_profile,
     start_session,
 )
@@ -26,6 +28,8 @@ _TOOL_HANDLERS = {
     "check_false_friend": check_false_friend,
     "log_confirmed_false_friend": log_confirmed_false_friend,
     "generate_false_friends_for_profile": generate_false_friends_for_profile,
+    "log_vocab_lookup": log_vocab_lookup,
+    "get_vocab_list": get_vocab_list,
 }
 
 
