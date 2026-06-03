@@ -1,13 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getProfile } from "@/lib/api"; // Using your existing function!
-
-// Adjust this interface to match what's in your codebase if needed
-interface Profile {
-  target_lang: string;
-  native_langs: string;
-}
+import { getProfile, type Profile } from "@/lib/api";
 
 export default function ProfileBadge() {
   const [profile, setProfile] = useState<Profile | null>(null);
