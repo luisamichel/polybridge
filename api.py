@@ -235,6 +235,15 @@ def _tool_display_message(tool_name: str) -> str:
     return TOOL_DISPLAY_MESSAGES.get(tool_name, "Thinking...")
 
 
+def _is_valid_json(text: str) -> bool:
+    """Check if a string is valid JSON."""
+    try:
+        json.loads(text)
+        return True
+    except (json.JSONDecodeError, ValueError):
+        return False
+
+
 def _merge_tool_call_delta(
     accumulated: dict[int, dict[str, Any]],
     tool_call_delta: Any,
@@ -304,6 +313,7 @@ async def stream_chat_response(
             )
 
             content_parts: list[str] = []
+            content_buffer: list[str] = []
             tool_calls_accum: dict[int, dict[str, Any]] = {}
             finish_reason: str | None = None
             saw_tool_call_delta = False
@@ -324,10 +334,17 @@ async def stream_chat_response(
 
                 if delta.content:
                     content_parts.append(delta.content)
-                    if not saw_tool_call_delta:
-                        yield _sse_event(
-                            {"type": "text", "content": delta.content}
-                        )
+                    # Buffer content instead of yielding immediately
+                    content_buffer.append(delta.content)
+
+            # Yield buffered content only if no tool calls were detected
+            if not saw_tool_call_delta and content_buffer:
+                for chunk in content_buffer:
+                    # Filter out JSON-like content
+                    stripped = chunk.strip()
+                    if stripped.startswith("{") and _is_valid_json(stripped):
+                        continue
+                    yield _sse_event({"type": "text", "content": chunk})
 
             if finish_reason == "tool_calls" and tool_calls_accum:
                 messages.append(
