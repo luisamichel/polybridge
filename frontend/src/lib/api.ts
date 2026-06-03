@@ -363,6 +363,27 @@ export async function deleteReset(): Promise<void> {
   }
 }
 
+export async function getCurrentDatabase(): Promise<string> {
+  const result = await fetchJson<{ db: string }>("/current-db");
+  return result?.db || "polyglot.db";
+}
+
+export async function switchDatabase(db: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/switch-db`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "ngrok-skip-browser-warning": "true",
+    },
+    body: JSON.stringify({ db }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ detail: "Failed to switch database" }));
+    throw new Error(errorData.detail || "Failed to switch database");
+  }
+}
+
 export async function getAnkiStatus(): Promise<AnkiStatus> {
   const result = await fetchJson<AnkiStatus>("/anki/status");
   return result ?? { connected: false };

@@ -6,19 +6,21 @@ import os
 
 load_dotenv()
 
-DB_NAME = os.getenv("POLYBRIDGE_DB", "polyglot.db")
-DB_PATH = Path(__file__).parent / "data" / DB_NAME
-
 def get_connection():
     """Always use this to get a DB connection — never connect directly."""
-    conn = sqlite3.connect(DB_PATH)
+    # Read POLYBRIDGE_DB dynamically on each connection to support runtime switching
+    db_name = os.getenv("POLYBRIDGE_DB", "polyglot.db")
+    db_path = Path(__file__).parent / "data" / db_name
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row  # Returns dict-like rows instead of tuples
     return conn
 
 def init_db():
     """Create all tables if they don't exist. Safe to call multiple times."""
     # Make sure data/ folder exists
-    DB_PATH.parent.mkdir(exist_ok=True)
+    db_name = os.getenv("POLYBRIDGE_DB", "polyglot.db")
+    db_path = Path(__file__).parent / "data" / db_name
+    db_path.parent.mkdir(exist_ok=True)
 
     with get_connection() as conn:
         conn.executescript("""
@@ -94,5 +96,7 @@ def migrate_db():
 if __name__ == "__main__":
     init_db()
     migrate_db()
+    db_name = os.getenv("POLYBRIDGE_DB", "polyglot.db")
+    db_path = Path(__file__).parent / "data" / db_name
     print("✓ Database initialized successfully")
-    print(f"✓ DB location: {DB_PATH}")
+    print(f"✓ DB location: {db_path}")

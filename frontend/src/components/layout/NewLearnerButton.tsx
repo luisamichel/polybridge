@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { deleteReset } from "@/lib/api"; // Adjust import path if needed
+import { deleteReset, switchDatabase, getCurrentDatabase } from "@/lib/api"; // Adjust import path if needed
 
 export default function NewLearnerButton() {
   const [isOpen, setIsOpen] = useState(false);
@@ -19,16 +19,23 @@ export default function NewLearnerButton() {
   const handleReset = async () => {
     setIsDeleting(true);
     try {
+      // Check current database and switch to live if needed
+      const currentDb = await getCurrentDatabase();
+      if (currentDb !== "polyglot.db") {
+        await switchDatabase("polyglot.db");
+      }
+
+      // Proceed with reset
       await deleteReset();
       window.dispatchEvent(new Event("profileUpdated"));
       window.dispatchEvent(new Event("chatReset"));
       setIsOpen(false);
-      
+
       router.push("/");
-      alert("Ready for a new learner!"); 
+      alert("Ready for a new learner!");
     } catch (error) {
       console.error(error);
-      alert("Failed to reset data. Check console.");
+      alert(error instanceof Error ? error.message : "Failed to reset data. Check console.");
     } finally {
       setIsDeleting(false);
     }

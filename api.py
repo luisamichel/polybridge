@@ -1,4 +1,5 @@
 from dotenv import load_dotenv
+from pathlib import Path
 
 load_dotenv()
 
@@ -176,6 +177,10 @@ class AddCardsRequest(BaseModel):
 class ExportDeckRequest(BaseModel):
     deck_type: str  # "false_friends", "vocab", "mistakes"
     deck_name: str | None = None
+
+
+class SwitchDatabaseRequest(BaseModel):
+    db: str  # "polyglot.db" or "demo_luisa.db"
 
 
 def _dartmouth_api_key() -> str:
@@ -460,24 +465,88 @@ def reset_data(body: ResetRequest):
             status_code=400,
             detail="Must send confirm=true to reset"
         )
-    
+
     with get_connection() as conn:
         # Delete all records from the main tables
         conn.execute("DELETE FROM errors")
         conn.execute("DELETE FROM sessions")
         conn.execute("DELETE FROM vocab")
         conn.execute("DELETE FROM user_profile")
-        
+
         # Reset the auto-increment counters so IDs start at 1 again
         conn.execute(
             "DELETE FROM sqlite_sequence WHERE name IN "
             "('errors','sessions','vocab','user_profile')"
         )
-    
+
     return {
         "status": "reset complete",
         "message": "Ready for a new learner."
     }
+
+
+@app.get("/current-db")
+def get_current_db():
+    """Return the currently active database name."""
+    return {"db": os.getenv("POLYBRIDGE_DB", "polyglot.db")}
+
+
+@app.post("/switch-db")
+def switch_database(body: SwitchDatabaseRequest):
+    """Switch to a different database file."""
+    # Validate db name against allowlist to prevent directory traversal
+    allowed_dbs = {"polyglot.db", "demo_luisa.db", "demo_spanish.db"}
+    if body.db not in allowed_dbs:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid database name. Must be one of: {', '.join(sorted(allowed_dbs))}"
+        )
+
+    # Check if the database file exists
+    db_path = Path(__file__).parent / "data" / body.db
+    if not db_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Database file '{body.db}' not found in data/ directory"
+        )
+
+    # Update .env file
+    env_path = Path(__file__).parent / ".env"
+    try:
+        # Read current .env content
+        env_content = env_path.read_text()
+
+        # Update or add POLYBRIDGE_DB line
+        lines = env_content.split('\n')
+        updated_lines = []
+        db_line_updated = False
+
+        for line in lines:
+            if line.startswith("POLYBRIDGE_DB="):
+                updated_lines.append(f"POLYBRIDGE_DB={body.db}")
+                db_line_updated = True
+            else:
+                updated_lines.append(line)
+
+        if not db_line_updated:
+            updated_lines.append(f"POLYBRIDGE_DB={body.db}")
+
+        # Write back to .env
+        env_path.write_text('\n'.join(updated_lines))
+
+        # Reload environment variables
+        load_dotenv(override=True)
+
+        return {
+            "status": "success",
+            "message": f"Switched to {body.db}",
+            "current_db": body.db
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to switch database: {str(e)}"
+        )
 
 @app.get("/profile")
 def get_profile() -> dict[str, Any]:
