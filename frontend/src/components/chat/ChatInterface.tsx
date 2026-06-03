@@ -19,8 +19,8 @@ import { chatMarkdownComponents } from "@/components/chat/chatMarkdown";
 import { sendMessage, type Message as ApiMessage } from "@/lib/api";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-/** Keep tool status visible long enough to read (tools finish on the server in ms). */
-const TOOL_INDICATOR_MIN_MS = 1200;
+
+const THINKING_STATUS = "Thinking...";
 
 type ChatInterfaceProps = {
   messages: ChatUiMessage[];
@@ -39,37 +39,10 @@ export function ChatInterface({ messages, setMessages }: ChatInterfaceProps) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [toolActivity, setToolActivity] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const toolHideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, toolActivity, isStreaming]);
-
-  useEffect(() => {
-    return () => {
-      if (toolHideTimeoutRef.current) {
-        clearTimeout(toolHideTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  function showToolActivity(display: string) {
-    if (toolHideTimeoutRef.current) {
-      clearTimeout(toolHideTimeoutRef.current);
-      toolHideTimeoutRef.current = null;
-    }
-    setToolActivity(display);
-  }
-
-  function scheduleHideToolActivity() {
-    if (toolHideTimeoutRef.current) {
-      clearTimeout(toolHideTimeoutRef.current);
-    }
-    toolHideTimeoutRef.current = setTimeout(() => {
-      setToolActivity(null);
-      toolHideTimeoutRef.current = null;
-    }, TOOL_INDICATOR_MIN_MS);
-  }
 
   async function sendUserMessage(text: string) {
     const trimmed = text.trim();
@@ -90,10 +63,6 @@ export function ChatInterface({ messages, setMessages }: ChatInterfaceProps) {
 
     const nextMessages = [...messages, userMessage, assistantPlaceholder];
     setMessages(nextMessages);
-    if (toolHideTimeoutRef.current) {
-      clearTimeout(toolHideTimeoutRef.current);
-      toolHideTimeoutRef.current = null;
-    }
     setToolActivity(null);
     setIsStreaming(true);
 
@@ -123,26 +92,18 @@ export function ChatInterface({ messages, setMessages }: ChatInterfaceProps) {
       onTextReset: clearAssistantContent,
       onToolStart: (display) => {
         clearAssistantContent();
-        showToolActivity(display);
+        setToolActivity(display);
       },
       onToolEnd: () => {
-        scheduleHideToolActivity();
+        setToolActivity(null);
       },
       onDone: () => {
-        if (toolHideTimeoutRef.current) {
-          clearTimeout(toolHideTimeoutRef.current);
-          toolHideTimeoutRef.current = null;
-        }
         setToolActivity(null);
         setIsStreaming(false);
 
         window.dispatchEvent(new Event("profileUpdated"));
       },
       onError: (message) => {
-        if (toolHideTimeoutRef.current) {
-          clearTimeout(toolHideTimeoutRef.current);
-          toolHideTimeoutRef.current = null;
-        }
         setToolActivity(null);
         setIsStreaming(false);
         setMessages((prev) => {
@@ -205,8 +166,12 @@ export function ChatInterface({ messages, setMessages }: ChatInterfaceProps) {
               isStreaming &&
               isLast;
             const previousMessage = index > 0 ? messages[index - 1] : null;
-            const reserveToolStatusSlot =
+            const showStreamingStatusArea =
               isStreamingAssistant && previousMessage?.role === "user";
+            const showStreamingStatus =
+              showStreamingStatusArea &&
+              (!message.content || Boolean(toolActivity));
+            const streamingStatusText = toolActivity ?? THINKING_STATUS;
             const showMessageBubble =
               message.role === "user" ||
               Boolean(message.content) ||
@@ -214,20 +179,18 @@ export function ChatInterface({ messages, setMessages }: ChatInterfaceProps) {
 
             return (
               <Fragment key={message.id}>
-                {reserveToolStatusSlot && (
+                {showStreamingStatusArea ? (
                   <p
-                    className="min-h-5 pl-11 text-sm leading-5 text-accent-cyan/90"
+                    className={`min-h-5 pl-11 text-sm leading-5 text-accent-cyan/90 transition-opacity duration-300 ease-in-out ${
+                      showStreamingStatus ? "opacity-100" : "opacity-0"
+                    }`}
                     aria-live="polite"
                   >
-                    {toolActivity ? (
-                      <span className="animate-pulse">{toolActivity}</span>
-                    ) : (
-                      <span className="invisible select-none" aria-hidden>
-                        &#8203;
-                      </span>
-                    )}
+                    <span key={streamingStatusText} className="chat-status-fade-in">
+                      <span className="animate-pulse">{streamingStatusText}</span>
+                    </span>
                   </p>
-                )}
+                ) : null}
                 {showMessageBubble && (
                   <div
                     className={`flex gap-3 ${

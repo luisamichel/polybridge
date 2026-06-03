@@ -12,7 +12,7 @@ import {
 
 const navItems = [
   { href: "/", label: "Chat", icon: MessageSquare },
-  { href: "/error-notebook", label: "Error Notebook", icon: BookOpen },
+  { href: "/error-notebook", label: "Errors Notebook", icon: BookOpen },
   { href: "/progress", label: "Progress", icon: TrendingUp },
   {
     href: "/false-friends",

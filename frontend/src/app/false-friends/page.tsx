@@ -190,9 +190,12 @@ export default function FlashcardsPage() {
     <div className="flex h-full flex-col overflow-y-auto">
       <div className="mx-auto w-full max-w-5xl px-6 py-8">
         {/* Header */}
-        <div className="mb-10 flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h1 className="text-3xl font-semibold tracking-tight text-foreground">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-accent-teal/70">
+              Practice &amp; review
+            </p>
+            <h1 className="mt-1 text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">
               Flashcards
             </h1>
             <p className="mt-2 max-w-lg text-sm leading-relaxed text-muted">

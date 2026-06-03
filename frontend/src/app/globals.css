@@ -130,6 +130,20 @@ body {
   transform: rotateY(180deg);
 }
 
+/* Chat tool / thinking status line */
+.chat-status-fade-in {
+  animation: chatStatusFadeIn 0.28s ease-in-out both;
+}
+
+@keyframes chatStatusFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 /* Custom scrollbar for chat */
 .chat-scroll::-webkit-scrollbar {
   width: 6px;
