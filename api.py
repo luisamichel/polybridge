@@ -85,6 +85,20 @@ TOOL_DISPLAY_MESSAGES: dict[str, str] = {
 
 DARTMOUTH_MODELS_URL = "https://chat.dartmouth.edu/api/models"
 MODEL_ID_KEYWORDS = ("claude", "gemini", "gpt", "llama")
+EXCLUDED_MODELS = {
+    "Llama 3.2 11b",
+    "Claude Opus 4.6",
+    "Claude Opus 4.7",
+    "Claude Opus 4.8",
+    "Claude Sonnet 4.6",
+    "GPT 5.3 Instant",
+    "GPT 5.4 2026-03-05",
+    "GPT 5.4 Mini 2026-03-17",
+    "GPT-5.5-2026-04-23",
+    "Llama 3.2 3b",
+    "google_genai.gemini-embedding-001",
+    "CodeLlama 13b Instruct HF",
+}
 
 SYSTEM_PROMPT = """You are PolyBridge, a personalized language tutor.
 You help users practice their target language through natural conversation.
@@ -197,6 +211,11 @@ def _parse_models_payload(payload: Any) -> list[dict[str, str]]:
         if not model_id or not _model_matches_filter(str(model_id)):
             continue
         name = item.get("name") or item.get("display_name") or str(model_id)
+        
+        # Filter out excluded models
+        if str(model_id) in EXCLUDED_MODELS or str(name) in EXCLUDED_MODELS:
+            continue
+        
         result.append({"id": str(model_id), "name": str(name)})
     return result
 
