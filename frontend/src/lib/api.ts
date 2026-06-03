@@ -105,6 +105,17 @@ export interface Report {
   shared?: number;
 }
 
+export interface AnkiStatus {
+  connected: boolean;
+  version?: number;
+}
+
+export interface AnkiExportResult {
+  added: number;
+  deck: string;
+  total: number;
+}
+
 async function fetchJson<T>(path: string): Promise<T | null> {
   try {
     const response = await fetch(`${API_BASE}${path}`, {
@@ -349,5 +360,39 @@ export async function deleteReset(): Promise<void> {
 
   if (!response.ok) {
     throw new Error("Failed to reset data");
+  }
+}
+
+export async function getAnkiStatus(): Promise<AnkiStatus> {
+  const result = await fetchJson<AnkiStatus>("/anki/status");
+  return result ?? { connected: false };
+}
+
+export async function exportDeckToAnki(
+  deck_type: "false_friends" | "vocab" | "mistakes",
+  deck_name?: string
+): Promise<AnkiExportResult | null> {
+  const body: { deck_type: string; deck_name?: string } = { deck_type };
+  if (deck_name !== undefined) {
+    body.deck_name = deck_name;
+  }
+
+  try {
+    const response = await fetch(`${API_BASE}/anki/export-deck`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "ngrok-skip-browser-warning": "true",
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    return (await response.json()) as AnkiExportResult;
+  } catch {
+    return null;
   }
 }

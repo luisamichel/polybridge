@@ -7,6 +7,7 @@ type DeckTileProps = {
   onClick: () => void;
   disabled?: boolean;
   emptyMessage?: string;
+  exportButton?: React.ReactNode;
 };
 
 export function DeckTile({
@@ -18,19 +19,25 @@ export function DeckTile({
   onClick,
   disabled = false,
   emptyMessage,
+  exportButton,
 }: DeckTileProps) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled || count === 0}
-      className={`group relative flex h-44 w-64 shrink-0 flex-col justify-between overflow-hidden rounded-2xl border border-border-subtle p-5 text-left transition-all duration-200 ${gradientClass} ${
-        disabled || count === 0
-          ? "cursor-not-allowed opacity-50"
-          : "cursor-pointer hover:scale-[1.02] hover:border-accent/40 hover:shadow-lg"
-      }`}
-      title={disabled || count === 0 ? emptyMessage : undefined}
-    >
+    <div className={`group relative flex h-44 w-64 shrink-0 flex-col justify-between overflow-hidden rounded-2xl border border-border-subtle p-5 text-left transition-all duration-200 ${gradientClass} ${
+      disabled || count === 0
+        ? "cursor-not-allowed opacity-50"
+        : ""
+    }`}>
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled || count === 0}
+        className={`absolute inset-0 text-left transition-all duration-200 ${
+          disabled || count === 0
+            ? "cursor-not-allowed"
+            : "cursor-pointer hover:scale-[1.02] hover:border-accent/40 hover:shadow-lg"
+        }`}
+        title={disabled || count === 0 ? emptyMessage : undefined}
+      />
       <div className="relative">
         <p
           className={`text-[10px] font-semibold uppercase tracking-[0.2em] ${subtitleClass}`}
@@ -41,15 +48,22 @@ export function DeckTile({
           {label}
         </h3>
       </div>
-      {disabled || count === 0 ? (
-        <p className="relative text-xs text-muted leading-tight">
-          {emptyMessage || "No cards available yet."}
-        </p>
-      ) : (
-        <p className="relative text-sm text-muted">
-          {count} {count === 1 ? "card" : "cards"}
-        </p>
-      )}
-    </button>
+      <div className="relative flex items-center justify-between">
+        {disabled || count === 0 ? (
+          <p className="text-xs text-muted leading-tight">
+            {emptyMessage || "No cards available yet."}
+          </p>
+        ) : (
+          <p className="text-sm text-muted">
+            {count} {count === 1 ? "card" : "cards"}
+          </p>
+        )}
+        {exportButton && !disabled && count > 0 && (
+          <div onClick={(e) => e.stopPropagation()} className="relative">
+            {exportButton}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

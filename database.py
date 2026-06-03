@@ -19,7 +19,7 @@ def init_db():
     """Create all tables if they don't exist. Safe to call multiple times."""
     # Make sure data/ folder exists
     DB_PATH.parent.mkdir(exist_ok=True)
-    
+
     with get_connection() as conn:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS user_profile (
@@ -37,7 +37,8 @@ def init_db():
                 category TEXT,           -- 'grammar', 'vocab', 'false_friend', 'gender', 'spelling'
                 interference_lang TEXT,  -- which native language caused this (could be none)
                 context TEXT,            -- full sentence where error occurred
-                notes TEXT               -- explanation of why it's wrong
+                notes TEXT,              -- explanation of why it's wrong
+                anki_exported INTEGER DEFAULT 0
             );
 
             CREATE TABLE IF NOT EXISTS vocab (
@@ -48,7 +49,8 @@ def init_db():
                 cognate_in TEXT,         -- which native language has a cognate (could be none)
                 is_false_friend INTEGER DEFAULT 0,
                 priority TEXT DEFAULT 'normal',
-                first_seen TEXT
+                first_seen TEXT,
+                anki_exported INTEGER DEFAULT 0
             );
 
             CREATE TABLE IF NOT EXISTS sessions (
@@ -58,7 +60,7 @@ def init_db():
                 summary TEXT,
                 errors_made INTEGER DEFAULT 0
             );
-                           
+
             CREATE TABLE IF NOT EXISTS reports (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 generated_at TEXT NOT NULL,
@@ -68,7 +70,29 @@ def init_db():
             );
         """)
 
+def migrate_db():
+    """Add anki_exported column to existing tables if they don't have it."""
+    with get_connection() as conn:
+        # Check if errors table has anki_exported column
+        cursor = conn.execute("PRAGMA table_info(errors)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if 'anki_exported' not in columns:
+            conn.execute("ALTER TABLE errors ADD COLUMN anki_exported INTEGER DEFAULT 0")
+            print("✓ Added anki_exported column to errors table")
+        else:
+            print("✓ errors table already has anki_exported column")
+
+        # Check if vocab table has anki_exported column
+        cursor = conn.execute("PRAGMA table_info(vocab)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if 'anki_exported' not in columns:
+            conn.execute("ALTER TABLE vocab ADD COLUMN anki_exported INTEGER DEFAULT 0")
+            print("✓ Added anki_exported column to vocab table")
+        else:
+            print("✓ vocab table already has anki_exported column")
+
 if __name__ == "__main__":
     init_db()
+    migrate_db()
     print("✓ Database initialized successfully")
     print(f"✓ DB location: {DB_PATH}")

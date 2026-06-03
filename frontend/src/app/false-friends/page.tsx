@@ -6,6 +6,9 @@ import {
   Link2,
   Loader2,
   Upload,
+  ExternalLink,
+  Check,
+  X,
 } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { DeckTile } from "@/components/flashcards/DeckTile";
@@ -17,10 +20,13 @@ import {
   getFalseFriendsByPair,
   getRecentDeck,
   getVocabLookups,
+  getAnkiStatus,
+  exportDeckToAnki,
   type FalseFriendCard,
   type FalseFriendsByPair,
   type RecentDeckCard,
   type VocabLookup,
+  type AnkiStatus,
 } from "@/lib/api";
 
 type ActiveDeck = {
@@ -128,6 +134,64 @@ function ComingSoonButton({
   );
 }
 
+function ExportButton({
+  loading,
+  success,
+  error,
+  onClick,
+}: {
+  loading: boolean;
+  success: string | null;
+  error: string | null;
+  onClick: () => void;
+}) {
+  if (loading) {
+    return (
+      <button
+        type="button"
+        disabled
+        className="flex items-center gap-1.5 rounded-full bg-surface/80 px-2.5 py-1 text-xs text-muted ring-1 ring-border-subtle"
+      >
+        <Loader2 className="h-3 w-3 animate-spin" />
+        Exporting...
+      </button>
+    );
+  }
+
+  if (success) {
+    return (
+      <div className="flex items-center gap-1.5 rounded-full bg-green-500/10 px-2.5 py-1 text-xs text-green-600 ring-1 ring-green-500/20">
+        <Check className="h-3 w-3" />
+        {success}
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex items-center gap-1.5 rounded-full bg-red-500/10 px-2.5 py-1 text-xs text-red-600 ring-1 ring-red-500/20 hover:bg-red-500/20"
+      >
+        <X className="h-3 w-3" />
+        {error}
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-center gap-1.5 rounded-full bg-surface/80 px-2.5 py-1 text-xs text-muted ring-1 ring-border-subtle hover:bg-surface-hover"
+    >
+      <ExternalLink className="h-3 w-3" />
+      Anki
+    </button>
+  );
+}
+
 export default function FlashcardsPage() {
   const [pairs, setPairs] = useState<FalseFriendsByPair[]>([]);
   const [recentDeck, setRecentDeck] = useState<RecentDeckCard[]>([]);
@@ -135,6 +199,14 @@ export default function FlashcardsPage() {
   const [loading, setLoading] = useState(true);
   const [fetchFailed, setFetchFailed] = useState(false);
   const [activeDeck, setActiveDeck] = useState<ActiveDeck | null>(null);
+  const [ankiStatus, setAnkiStatus] = useState<AnkiStatus>({ connected: false });
+  const [showConnectModal, setShowConnectModal] = useState(false);
+  const [showExportAllModal, setShowExportAllModal] = useState(false);
+  const [exportStates, setExportStates] = useState<{
+    false_friends?: { loading: boolean; success: string | null; error: string | null };
+    vocab?: { loading: boolean; success: string | null; error: string | null };
+    mistakes?: { loading: boolean; success: string | null; error: string | null };
+  }>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -166,6 +238,17 @@ export default function FlashcardsPage() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => {
+    async function checkAnkiStatus() {
+      const status = await getAnkiStatus();
+      setAnkiStatus(status);
+    }
+
+    checkAnkiStatus();
+    const interval = setInterval(checkAnkiStatus, 15000);
+    return () => clearInterval(interval);
   }, []);
 
   const recentCards = useMemo(
@@ -202,6 +285,35 @@ export default function FlashcardsPage() {
     });
   }
 
+  async function handleExportToAnki(
+    deckType: "false_friends" | "vocab" | "mistakes",
+    deckName?: string
+  ) {
+    setExportStates((prev) => ({
+      ...prev,
+      [deckType]: { loading: true, success: null, error: null },
+    }));
+
+    const result = await exportDeckToAnki(deckType, deckName);
+
+    setExportStates((prev) => ({
+      ...prev,
+      [deckType]: {
+        loading: false,
+        success: result ? `${result.added} cards added to Anki` : null,
+        error: result ? null : "Failed — is Anki open?",
+      },
+    }));
+  }
+
+  async function handleExportAll() {
+    setShowExportAllModal(false);
+    
+    for (const deckType of ["false_friends", "vocab", "mistakes"] as const) {
+      await handleExportToAnki(deckType);
+    }
+  }
+
   if (activeDeck) {
     return (
       <StudySession
@@ -232,11 +344,33 @@ export default function FlashcardsPage() {
 
           <div className="flex flex-col items-start gap-3 sm:items-end">
             <div className="flex items-center gap-2 rounded-full bg-surface px-3 py-1.5 text-xs text-muted ring-1 ring-border-subtle">
-              <span className="h-2 w-2 rounded-full bg-zinc-600" />
-              Anki: not connected
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  ankiStatus.connected ? "bg-green-500" : "bg-red-500"
+                }`}
+              />
+              {ankiStatus.connected ? "Anki connected" : "Anki not connected"}
             </div>
             <div className="flex flex-wrap gap-2">
-              <ComingSoonButton icon={Link2}>Connect Anki</ComingSoonButton>
+              {!ankiStatus.connected ? (
+                <button
+                  type="button"
+                  onClick={() => setShowConnectModal(true)}
+                  className="flex items-center gap-2 rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm text-foreground hover:bg-surface-hover"
+                >
+                  <Link2 className="h-4 w-4" />
+                  Connect Anki
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowExportAllModal(true)}
+                  className="flex items-center gap-2 rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm text-foreground hover:bg-surface-hover"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  Export all to Anki
+                </button>
+              )}
               <ComingSoonButton icon={Download}>Import .apkg</ComingSoonButton>
               <ComingSoonButton icon={Upload}>Export</ComingSoonButton>
             </div>
@@ -285,16 +419,30 @@ export default function FlashcardsPage() {
                       deck.native_lang,
                       deck.target_lang,
                     );
+                    const state = exportStates.false_friends;
+                    const deckKey = `${deck.native_lang}-${deck.target_lang}`;
 
                     return (
                       <DeckTile
-                        key={`${deck.native_lang}-${deck.target_lang}`}
+                        key={deckKey}
                         subtitle={deck.subtitle.toUpperCase()}
                         label={deck.label}
                         count={deck.count}
                         gradientClass={style.gradientClass}
                         subtitleClass={style.subtitleClass}
                         onClick={() => openFalseFriendsDeck(deck)}
+                        exportButton={
+                          ankiStatus.connected ? (
+                            <ExportButton
+                              loading={state?.loading ?? false}
+                              success={state?.success ?? null}
+                              error={state?.error ?? null}
+                              onClick={() =>
+                                handleExportToAnki("false_friends", deck.label)
+                              }
+                            />
+                          ) : null
+                        }
                       />
                     );
                   })}
@@ -322,6 +470,16 @@ export default function FlashcardsPage() {
                   subtitleClass="text-accent-violet"
                   onClick={openRecentDeck}
                   disabled={recentDeck.length === 0}
+                  exportButton={
+                    ankiStatus.connected ? (
+                      <ExportButton
+                        loading={exportStates.mistakes?.loading ?? false}
+                        success={exportStates.mistakes?.success ?? null}
+                        error={exportStates.mistakes?.error ?? null}
+                        onClick={() => handleExportToAnki("mistakes")}
+                      />
+                    ) : null
+                  }
                 />
                 <DeckTile
                   subtitle="MY VOCABULARY"
@@ -332,12 +490,87 @@ export default function FlashcardsPage() {
                   onClick={openVocabDeck}
                   disabled={vocabLookups.length === 0}
                   emptyMessage="No words saved yet. Ask about any word during conversation — It will be added here automatically."
+                  exportButton={
+                    ankiStatus.connected ? (
+                      <ExportButton
+                        loading={exportStates.vocab?.loading ?? false}
+                        success={exportStates.vocab?.success ?? null}
+                        error={exportStates.vocab?.error ?? null}
+                        onClick={() => handleExportToAnki("vocab")}
+                      />
+                    ) : null
+                  }
                 />
               </div>
             </section>
           </>
         )}
       </div>
+
+      {/* Connect Anki Modal */}
+      {showConnectModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="mx-4 max-w-md rounded-xl bg-surface border border-border-subtle p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-foreground">
+              Connect Anki
+            </h3>
+            <p className="mt-2 text-sm text-muted">
+              Make sure Anki is open on your computer with the AnkiConnect plugin
+              installed. Then refresh this page.
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowConnectModal(false)}
+                className="rounded-lg border border-border-subtle bg-surface px-4 py-2 text-sm text-foreground hover:bg-surface-hover"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowConnectModal(false);
+                  window.location.reload();
+                }}
+                className="rounded-lg bg-accent px-4 py-2 text-sm text-foreground hover:bg-accent/90"
+              >
+                Refresh
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Export All Modal */}
+      {showExportAllModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="mx-4 max-w-md rounded-xl bg-surface border border-border-subtle p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-foreground">
+              Export all to Anki
+            </h3>
+            <p className="mt-2 text-sm text-muted">
+              Export all flashcard decks to Anki? This will create PolyBridge decks
+              in your Anki collection.
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowExportAllModal(false)}
+                className="rounded-lg border border-border-subtle bg-surface px-4 py-2 text-sm text-foreground hover:bg-surface-hover"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleExportAll}
+                className="rounded-lg bg-accent px-4 py-2 text-sm text-foreground hover:bg-accent/90"
+              >
+                Export all
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

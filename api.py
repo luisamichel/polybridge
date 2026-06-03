@@ -3,10 +3,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import json
+import logging
 import os
+import traceback
+import urllib.request
+import urllib.error
 from collections import defaultdict
 from collections.abc import AsyncIterator
 from typing import Any, Literal
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 import httpx
 from fastapi import FastAPI, Query, HTTPException
@@ -16,9 +23,40 @@ from openai import OpenAI
 from pydantic import BaseModel
 
 from database import get_connection
-from false_friends import _load as load_false_friends
+from false_friends import _load as load_false_friends, get_for_profile
 from tool_executor import execute_tool
 from tools import TOOLS
+
+ANKI_CONNECT_URL = "http://localhost:8765"
+
+
+def anki_request(action: str, **params) -> dict:
+    """Send a request to AnkiConnect and return the response."""
+    request_data = {"action": action, "version": 6, "params": params}
+    data_json = json.dumps(request_data).encode("utf-8")
+
+    try:
+        req = urllib.request.Request(
+            ANKI_CONNECT_URL,
+            data=data_json,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req) as response:
+            response_data = json.loads(response.read().decode("utf-8"))
+
+        if response_data.get("error"):
+            raise HTTPException(
+                status_code=500,
+                detail=f"AnkiConnect error: {response_data['error']}"
+            )
+
+        return response_data.get("result", response_data)
+    except urllib.error.URLError:
+        raise HTTPException(
+            status_code=503,
+            detail="Anki is not running. Please open Anki and try again."
+        )
+
 
 MAX_TOOL_ITERATIONS = 10
 
@@ -72,8 +110,6 @@ CRITICAL RULES — read carefully:
    - Call log_error() immediately when the user makes a mistake
    - category MUST be exactly one of: grammar, vocab, false_friend, 
      gender, spelling, word_order, unknown
-   - NEVER put a sentence or explanation in the category field
-   - NEVER put context in the category field
    - interference_lang MUST be: a two letter acronym for the native language causing the interference, 
    or none
 
@@ -96,6 +132,26 @@ class ChatRequest(BaseModel):
 
 class ResetRequest(BaseModel):
     confirm: bool
+
+
+class CreateDeckRequest(BaseModel):
+    deck_name: str
+
+
+class Card(BaseModel):
+    front: str
+    back: str
+    tags: list[str] = []
+
+
+class AddCardsRequest(BaseModel):
+    deck_name: str
+    cards: list[Card]
+
+
+class ExportDeckRequest(BaseModel):
+    deck_type: str  # "false_friends", "vocab", "mistakes"
+    deck_name: str | None = None
 
 
 def _dartmouth_api_key() -> str:
@@ -566,3 +622,194 @@ async def chat(request: ChatRequest):
         media_type="text/event-stream",
         headers=SSE_HEADERS,
     )
+
+
+@app.get("/anki/status")
+def get_anki_status() -> dict[str, Any]:
+    """Check if AnkiConnect is running."""
+    try:
+        anki_request("version")
+        return {"connected": True, "version": 6}
+    except HTTPException:
+        return {"connected": False}
+
+
+@app.post("/anki/create-deck")
+def create_anki_deck(request: CreateDeckRequest) -> dict[str, Any]:
+    """Create a deck in Anki."""
+    anki_request("createDeck", deck=request.deck_name)
+    return {"created": True, "deck": request.deck_name}
+
+
+@app.post("/anki/add-cards")
+def add_anki_cards(request: AddCardsRequest) -> dict[str, Any]:
+    """Add multiple cards to an Anki deck."""
+    logger.info(f"Adding {len(request.cards)} cards to deck: {request.deck_name}")
+    # Ensure deck exists
+    anki_request("createDeck", deck=request.deck_name)
+
+    # Build notes for bulk add
+    notes = [
+        {
+            "deckName": request.deck_name,
+            "modelName": "Basic",
+            "fields": {"Front": card.front, "Back": card.back},
+            "tags": card.tags,
+            "options": {"allowDuplicate": False}
+        }
+        for card in request.cards
+    ]
+
+    result = anki_request("addNotes", notes=notes)
+
+    # Count successfully added notes (note IDs are integers)
+    added_count = 0
+    if isinstance(result, list):
+        for item in result:
+            if isinstance(item, int):
+                added_count += 1
+
+    logger.info(f"Successfully added {added_count} cards")
+    return {"added": added_count, "deck": request.deck_name}
+
+
+@app.post("/anki/export-deck")
+def export_anki_deck(request: ExportDeckRequest) -> dict[str, Any]:
+    """Export PolyBridge data to Anki based on deck_type."""
+    try:
+        logger.info(f"Exporting deck_type: {request.deck_type}, deck_name: {request.deck_name}")
+        deck_name = request.deck_name
+        cards: list[Card] = []
+        exported_ids: list[int] = []  # Track IDs to mark as exported
+
+        if request.deck_type == "false_friends":
+            if not deck_name:
+                deck_name = "PolyBridge::False Friends"
+
+            native_langs, target_lang = _get_profile_langs()
+            if not native_langs or not target_lang:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Profile not set. Please set your native and target languages first."
+                )
+
+            # Get false friends that haven't been exported yet
+            with get_connection() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT id, word, translation, target_language, cognate_in
+                    FROM vocab
+                    WHERE is_false_friend = 1 AND anki_exported = 0
+                    """
+                ).fetchall()
+
+            # Filter by profile languages
+            false_friends = []
+            for row in rows:
+                if row["target_language"] == target_lang and any(
+                    lang in row["cognate_in"] or "" for lang in native_langs
+                ):
+                    false_friends.append(dict(row))
+
+            for ff in false_friends:
+                exported_ids.append(ff["id"])
+                native_lang = next(
+                    (lang for lang in native_langs if lang in (ff["cognate_in"] or "")),
+                    native_langs[0] if native_langs else "EN"
+                )
+                native_lang_name = _lang_name(native_lang)
+                cards.append(Card(
+                    front=f"⚠️ {ff['word']}\n({native_lang_name} speaker trap)",
+                    back=f"Means: {ff['translation']}\n\nTrap: {ff['cognate_in'] or 'None'}",
+                    tags=["polybridge", "false-friend", native_lang.lower()]
+                ))
+
+        elif request.deck_type == "vocab":
+            if not deck_name:
+                deck_name = "PolyBridge::Vocabulary"
+
+            with get_connection() as conn:
+                rows = conn.execute(
+                    "SELECT id, word, translation, cognate_in FROM vocab WHERE is_false_friend = 0 AND anki_exported = 0"
+                ).fetchall()
+
+            for row in rows:
+                exported_ids.append(row["id"])
+                notes = row["cognate_in"] or ""
+                cards.append(Card(
+                    front=row["word"],
+                    back=f"{row['translation']}\n\n{notes}" if notes else row["translation"] or "",
+                    tags=["polybridge", "vocabulary"]
+                ))
+
+        elif request.deck_type == "mistakes":
+            if not deck_name:
+                deck_name = "PolyBridge::Mistakes"
+
+            placeholders = ", ".join("?" for _ in VALID_ERROR_CATEGORIES)
+            with get_connection() as conn:
+                rows = conn.execute(
+                    f"""
+                    SELECT id, mistake, correction, notes, category
+                    FROM errors
+                    WHERE category IN ({placeholders})
+                      AND timestamp >= datetime('now', '-7 days')
+                      AND anki_exported = 0
+                    ORDER BY timestamp DESC
+                    LIMIT 20
+                    """,
+                    tuple(VALID_ERROR_CATEGORIES),
+                ).fetchall()
+
+            for row in rows:
+                exported_ids.append(row["id"])
+                category = row["category"] or "unknown"
+                notes = row["notes"] or ""
+                cards.append(Card(
+                    front=f"{row['mistake']}\n\n[{category}]",
+                    back=f"✓ {row['correction']}\n\n{notes}" if notes else f"✓ {row['correction']}",
+                    tags=["polybridge", "mistake", category]
+                ))
+
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid deck_type: {request.deck_type}. Must be 'false_friends', 'vocab', or 'mistakes'."
+            )
+        
+        # Add cards to Anki
+        logger.info(f"Fetched {len(cards)} unexported cards for deck_type: {request.deck_type}")
+        if cards:
+            add_request = AddCardsRequest(deck_name=deck_name, cards=cards)
+            result = add_anki_cards(add_request)
+            logger.info(f"Added {result['added']} cards to Anki deck: {deck_name}")
+
+            # Mark cards as exported if successful
+            if result["added"] > 0 and exported_ids:
+                with get_connection() as conn:
+                    if request.deck_type in ["vocab", "false_friends"]:
+                        placeholders = ", ".join("?" for _ in exported_ids)
+                        conn.execute(
+                            f"UPDATE vocab SET anki_exported = 1 WHERE id IN ({placeholders})",
+                            tuple(exported_ids)
+                        )
+                    elif request.deck_type == "mistakes":
+                        placeholders = ", ".join("?" for _ in exported_ids)
+                        conn.execute(
+                            f"UPDATE errors SET anki_exported = 1 WHERE id IN ({placeholders})",
+                            tuple(exported_ids)
+                        )
+                logger.info(f"Marked {len(exported_ids)} cards as exported")
+
+            return {
+                "added": result["added"],
+                "deck": deck_name,
+                "total": len(cards)
+            }
+
+        logger.info(f"No cards to export for deck_type: {request.deck_type}")
+        return {"added": 0, "deck": deck_name, "total": 0}
+    except Exception as e:
+        logger.error(f"Error exporting deck: {e}")
+        traceback.print_exc()  # prints full traceback to terminal
+        raise HTTPException(status_code=500, detail=str(e))
