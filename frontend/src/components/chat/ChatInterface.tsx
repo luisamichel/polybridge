@@ -90,12 +90,12 @@ export function ChatInterface({ messages, setMessages }: ChatInterfaceProps) {
         );
       },
       onTextReset: clearAssistantContent,
-      onToolStart: (display) => {
+      onToolStart: (display, _tool) => {
         clearAssistantContent();
         setToolActivity(display);
       },
       onToolEnd: () => {
-        setToolActivity(null);
+        setTimeout(() => setToolActivity(null), 2000);
       },
       onDone: () => {
         setToolActivity(null);
