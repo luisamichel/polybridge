@@ -706,17 +706,60 @@ def add_anki_cards(request: AddCardsRequest) -> dict[str, Any]:
         for card in request.cards
     ]
 
-    result = anki_request("addNotes", notes=notes)
+    # Try bulk add first
+    try:
+        result = anki_request("addNotes", notes=notes)
 
-    # Count successfully added notes (note IDs are integers)
-    added_count = 0
-    if isinstance(result, list):
-        for item in result:
-            if isinstance(item, int):
-                added_count += 1
+        # Count successfully added notes and track which indices succeeded
+        added_count = 0
+        successful_indices: list[int] = []
+        if isinstance(result, list):
+            for index, item in enumerate(result):
+                if isinstance(item, int):
+                    added_count += 1
+                    successful_indices.append(index)
 
-    logger.info(f"Successfully added {added_count} cards")
-    return {"added": added_count, "deck": request.deck_name}
+        logger.info(f"Successfully added {added_count} cards via bulk add")
+        return {"added": added_count, "deck": request.deck_name, "successful_indices": successful_indices}
+
+    except HTTPException as e:
+        # Check if it's a duplicate error
+        error_detail = str(e.detail)
+        if "duplicate" in error_detail.lower():
+            logger.info(f"Bulk add failed due to duplicates, adding cards individually")
+            # Fall back to individual card addition
+            added_count = 0
+            successful_indices: list[int] = []
+
+            for index, card in enumerate(request.cards):
+                try:
+                    single_note = [
+                        {
+                            "deckName": request.deck_name,
+                            "modelName": "Basic",
+                            "fields": {"Front": card.front, "Back": card.back},
+                            "tags": card.tags,
+                            "options": {"allowDuplicate": False}
+                        }
+                    ]
+                    result = anki_request("addNotes", notes=single_note)
+                    if isinstance(result, list) and len(result) > 0 and isinstance(result[0], int):
+                        added_count += 1
+                        successful_indices.append(index)
+                        logger.info(f"Successfully added card {index + 1}/{len(request.cards)}")
+                    else:
+                        logger.info(f"Skipped duplicate card {index + 1}/{len(request.cards)}")
+                except HTTPException as single_error:
+                    if "duplicate" in str(single_error.detail).lower():
+                        logger.info(f"Skipped duplicate card {index + 1}/{len(request.cards)}")
+                    else:
+                        logger.error(f"Failed to add card {index + 1}/{len(request.cards)}: {single_error.detail}")
+
+            logger.info(f"Successfully added {added_count} cards via individual add")
+            return {"added": added_count, "deck": request.deck_name, "successful_indices": successful_indices}
+        else:
+            # Re-raise non-duplicate errors
+            raise
 
 
 @app.post("/anki/export-deck")
@@ -794,13 +837,19 @@ def export_anki_deck(request: ExportDeckRequest) -> dict[str, Any]:
 
             placeholders = ", ".join("?" for _ in VALID_ERROR_CATEGORIES)
             with get_connection() as conn:
+                # Deduplicate by (mistake, correction), keeping only the most recent
                 rows = conn.execute(
                     f"""
                     SELECT id, mistake, correction, notes, category
                     FROM errors
-                    WHERE category IN ({placeholders})
-                      AND timestamp >= datetime('now', '-7 days')
-                      AND anki_exported = 0
+                    WHERE id IN (
+                        SELECT MAX(id)
+                        FROM errors
+                        WHERE category IN ({placeholders})
+                          AND timestamp >= datetime('now', '-7 days')
+                          AND anki_exported = 0
+                        GROUP BY mistake, correction
+                    )
                     ORDER BY timestamp DESC
                     LIMIT 20
                     """,
@@ -830,22 +879,26 @@ def export_anki_deck(request: ExportDeckRequest) -> dict[str, Any]:
             result = add_anki_cards(add_request)
             logger.info(f"Added {result['added']} cards to Anki deck: {deck_name}")
 
-            # Mark cards as exported if successful
+            # Mark only successfully added cards as exported
             if result["added"] > 0 and exported_ids:
-                with get_connection() as conn:
-                    if request.deck_type in ["vocab", "false_friends"]:
-                        placeholders = ", ".join("?" for _ in exported_ids)
-                        conn.execute(
-                            f"UPDATE vocab SET anki_exported = 1 WHERE id IN ({placeholders})",
-                            tuple(exported_ids)
-                        )
-                    elif request.deck_type == "mistakes":
-                        placeholders = ", ".join("?" for _ in exported_ids)
-                        conn.execute(
-                            f"UPDATE errors SET anki_exported = 1 WHERE id IN ({placeholders})",
-                            tuple(exported_ids)
-                        )
-                logger.info(f"Marked {len(exported_ids)} cards as exported")
+                successful_indices = result.get("successful_indices", [])
+                successfully_exported_ids = [exported_ids[i] for i in successful_indices if i < len(exported_ids)]
+
+                if successfully_exported_ids:
+                    with get_connection() as conn:
+                        if request.deck_type in ["vocab", "false_friends"]:
+                            placeholders = ", ".join("?" for _ in successfully_exported_ids)
+                            conn.execute(
+                                f"UPDATE vocab SET anki_exported = 1 WHERE id IN ({placeholders})",
+                                tuple(successfully_exported_ids)
+                            )
+                        elif request.deck_type == "mistakes":
+                            placeholders = ", ".join("?" for _ in successfully_exported_ids)
+                            conn.execute(
+                                f"UPDATE errors SET anki_exported = 1 WHERE id IN ({placeholders})",
+                                tuple(successfully_exported_ids)
+                            )
+                    logger.info(f"Marked {len(successfully_exported_ids)} cards as exported")
 
             return {
                 "added": result["added"],
