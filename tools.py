@@ -145,13 +145,31 @@ GET_ERROR_PATTERNS = {
     },
 }
 
+IS_SESSION_ACTIVE = {
+    "type": "function",
+    "function": {
+        "name": "is_session_active",
+        "description": (
+            "Check whether a learning session is currently active.\n\n"
+            "Returns true if a session has been started and not yet ended.\n"
+            "Use this to avoid starting a new session while one is already active."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
+    },
+}
+
 START_SESSION = {
     "type": "function",
     "function": {
         "name": "start_session",
         "description": (
-            "Start a language learning session. Call this at the beginning of\n"
-            "any practice conversation or study session."
+            "Start a language learning session. Call this at the beginning of "
+            "a practice or study session only. Do not recall it while a session "
+            "is active, even if the user changes the topic of the conversation."
         ),
         "parameters": {
             "type": "object",
@@ -392,6 +410,82 @@ LOG_CONFIRMED_FALSE_FRIEND = {
     },
 }
 
+LOG_VOCAB_LOOKUP = {
+    "type": "function",
+    "function": {
+        "name": "log_vocab_lookup",
+        "description": (
+            "Log a word that the user asked about during conversation.\n\n"
+            "Call this immediately when:\n"
+            "- The user asks \"what does X mean?\"\n"
+            "- The user asks \"what is X?\"\n"
+            "- The user asks for a translation of a specific word\n"
+            "- The user seems confused about a word you used and you explain it\n"
+            "- The user explicitly asks to save or remember a word\n\n"
+            "Do NOT call this for:\n"
+            "- Words the user already clearly knows\n"
+            "- Words you mention in passing without the user asking\n"
+            "- Error corrections (use log_error for those)"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "word": {
+                    "type": "string",
+                    "description": "The word in the target language exactly as it appeared",
+                },
+                "translation": {
+                    "type": "string",
+                    "description": (
+                        "The meaning in the user's native language(s). "
+                        "Include both EN and PT translations if relevant. "
+                        "e.g. \"siren / sireia (PT)\""
+                    ),
+                },
+                "example_sentence": {
+                    "type": "string",
+                    "description": (
+                        "The sentence where this word appeared, "
+                        "or a good example sentence using the word"
+                    ),
+                },
+                "notes": {
+                    "type": "string",
+                    "description": (
+                        "Any helpful memory tip, etymology, or usage note. "
+                        "e.g. \"same root as English 'siren', used for mermaid in French (not just alarm)\""
+                    ),
+                },
+            },
+            "required": ["word", "translation"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+GET_VOCAB_LIST = {
+    "type": "function",
+    "function": {
+        "name": "get_vocab_list",
+        "description": (
+            "Get the user's saved vocabulary words.\n"
+            "Use this when the user asks to review their vocab list "
+            "or wants to see words they have looked up."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of words to return (default 20)",
+                },
+            },
+            "required": [],
+            "additionalProperties": False,
+        },
+    },
+}
+
 GENERATE_FALSE_FRIENDS_FOR_PROFILE = {
     "type": "function",
     "function": {
@@ -417,6 +511,7 @@ TOOLS = [
     GET_PROFILE,
     LOG_ERROR,
     GET_RECENT_ERRORS,
+    IS_SESSION_ACTIVE,
     START_SESSION,
     END_SESSION,
     GET_ERROR_PATTERNS,
@@ -425,6 +520,8 @@ TOOLS = [
     CHECK_FALSE_FRIEND,
     LOG_CONFIRMED_FALSE_FRIEND,
     GENERATE_FALSE_FRIENDS_FOR_PROFILE,
+    LOG_VOCAB_LOOKUP,
+    GET_VOCAB_LIST,
 ]
 
 TOOL_NAMES = {tool["function"]["name"] for tool in TOOLS}

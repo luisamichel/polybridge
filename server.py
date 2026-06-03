@@ -190,16 +190,38 @@ def get_recent_errors(limit: int = 10) -> str:
 # ============================================================
 
 @mcp.tool()
+def is_session_active() -> str:
+    """
+    Check whether a learning session is currently active.
+
+    Returns true if a session has been started and not yet ended.
+    Use this to avoid starting a new session while one is already active.
+    """
+    with get_connection() as conn:
+        # Check if there's a session in the last 3 hours without an end summary
+        recent_session = conn.execute("""
+            SELECT COUNT(*) as count FROM sessions
+            WHERE date > datetime('now', '-3 hours')
+            AND summary IS NULL
+        """).fetchone()['count']
+
+    if recent_session > 0:
+        return "Yes, a session is currently active."
+
+    return "No session is currently active."
+
+@mcp.tool()
 def start_session(
     topic: str = "general conversation",
     focus_grammar: str = "",
 ) -> str:
     """
-    Start a language learning session. Call this at the beginning of 
-    any practice conversation or study session.
-    
+    Start a language learning session. Call this at the beginning of
+    a practice or study session only. Do not recall it while a session
+    is active, even if the user changes the topic of the conversation.
+
     Args:
-        topic: what will be practiced — e.g. 'past tense', 
+        topic: what will be practiced — e.g. 'past tense',
                'food vocabulary', 'general conversation'
         focus_grammar: optional grammar point to emphasize during the session
                        (e.g. 'subjunctive', 'preterite vs imperfect')
