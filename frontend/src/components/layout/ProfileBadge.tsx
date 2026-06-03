@@ -47,9 +47,11 @@ export default function ProfileBadge() {
   // Quick fix: safely parse '["PT", "EN"]' into 'PT, EN'
   let formattedNativeLangs = profile.native_languages;
   try {
-    const parsed = JSON.parse(profile.native_languages);
-    if (Array.isArray(parsed)) {
-      formattedNativeLangs = parsed.join(", ");
+    if (profile.native_languages) {
+      const parsed = JSON.parse(profile.native_languages);
+      if (Array.isArray(parsed)) {
+        formattedNativeLangs = parsed.join(", ");
+      }
     }
   } catch (e) {
     // If it fails to parse, it's probably already a normal string. We do nothing.

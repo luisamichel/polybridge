@@ -107,7 +107,11 @@ export interface Report {
 
 async function fetchJson<T>(path: string): Promise<T | null> {
   try {
-    const response = await fetch(`${API_BASE}${path}`);
+    const response = await fetch(`${API_BASE}${path}`, {
+      headers: {
+        "ngrok-skip-browser-warning": "true",
+      },
+    });
     if (!response.ok) {
       return null;
     }
@@ -230,7 +234,11 @@ function dispatchStreamEvent(
 }
 
 export async function getModels(): Promise<ChatModel[]> {
-  const response = await fetch(`${API_BASE}/models`);
+  const response = await fetch(`${API_BASE}/models`, {
+    headers: {
+      "ngrok-skip-browser-warning": "true",
+    },
+  });
   if (!response.ok) {
     throw new Error("Failed to load models. Check that the API is running.");
   }
@@ -245,7 +253,10 @@ export async function sendMessage(
 ): Promise<void> {
   const response = await fetch(`${API_BASE}/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { 
+      "Content-Type": "application/json",
+      "ngrok-skip-browser-warning": "true",
+    },
     body: JSON.stringify({ messages, model }),
   });
 
@@ -331,6 +342,7 @@ export async function deleteReset(): Promise<void> {
     method: "DELETE",
     headers: {
       "Content-Type": "application/json",
+      "ngrok-skip-browser-warning": "true",
     },
     body: JSON.stringify({ confirm: true }),
   });
